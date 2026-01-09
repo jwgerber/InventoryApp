@@ -29,16 +29,18 @@ def get_inventory_months():
 
 @app.route('/api/inventory', methods=['GET'])
 def get_inventory():
-    """Get all inventory items with counts for specified month."""
+    """Get all inventory items with counts for specified month and store."""
     month = request.args.get('month')
-    items = db.get_all_inventory(month)
+    store = request.args.get('store')
+    items = db.get_all_inventory(month, store)
     return jsonify(items)
 
 @app.route('/api/inventory/<item_id>', methods=['GET'])
 def get_inventory_item(item_id):
     """Get a single inventory item."""
     month = request.args.get('month')
-    item = db.get_inventory_item(item_id, month)
+    store = request.args.get('store')
+    item = db.get_inventory_item(item_id, month, store)
     return jsonify(item) if item else (jsonify({'error': 'Item not found'}), 404)
 
 @app.route('/api/inventory/<item_id>', methods=['PUT'])
@@ -46,7 +48,8 @@ def update_inventory_item(item_id):
     """Update an inventory item."""
     data = request.get_json()
     month = data.get('month')
-    item = db.update_inventory_item(item_id, data, month)
+    store = data.get('store')  # Store for count tracking (Inman, Central, etc.)
+    item = db.update_inventory_item(item_id, data, month, store)
     return jsonify(item) if item else (jsonify({'error': 'Item not found'}), 404)
 
 @app.route('/api/inventory', methods=['POST'])
@@ -67,10 +70,11 @@ def delete_inventory_item(item_id):
 
 @app.route('/api/inventory/clear-counts', methods=['POST'])
 def clear_counts():
-    """Clear all inventory counts for a specific month."""
+    """Clear all inventory counts for a specific month and/or store."""
     data = request.get_json() or {}
     month = data.get('month')
-    db.clear_all_counts(month)
+    store = data.get('store')
+    db.clear_all_counts(month, store)
     return jsonify({'success': True})
 
 # ==================== PRICE API ====================
@@ -221,6 +225,45 @@ def delete_location(location_id):
     if db.delete_location(location_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Location not found'}), 404
+
+# ==================== STORE API ====================
+
+@app.route('/api/stores', methods=['GET'])
+def get_stores():
+    """Get all stores (physical locations like Inman, Central)."""
+    stores = db.get_all_stores()
+    return jsonify(stores)
+
+@app.route('/api/stores', methods=['POST'])
+def add_store():
+    """Add a new store."""
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Store name is required'}), 400
+    store = db.add_store(name)
+    if store:
+        return jsonify(store), 201
+    return jsonify({'error': 'Store already exists'}), 409
+
+@app.route('/api/stores/<int:store_id>', methods=['PUT'])
+def update_store(store_id):
+    """Update a store."""
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Store name is required'}), 400
+    store = db.update_store(store_id, name)
+    if store:
+        return jsonify(store)
+    return jsonify({'error': 'Store not found or name already exists'}), 404
+
+@app.route('/api/stores/<int:store_id>', methods=['DELETE'])
+def delete_store(store_id):
+    """Delete a store."""
+    if db.delete_store(store_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Store not found'}), 404
 
 # ==================== EXPORT API ====================
 

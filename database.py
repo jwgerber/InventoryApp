@@ -66,6 +66,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS inventory_counts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             inventory_item_id TEXT,
+            store TEXT DEFAULT '',
             month TEXT,
             count1 REAL DEFAULT 0,
             count2 REAL DEFAULT 0,
@@ -74,7 +75,7 @@ def init_db():
             created_at TEXT,
             updated_at TEXT,
             FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id),
-            UNIQUE(inventory_item_id, month)
+            UNIQUE(inventory_item_id, store, month)
         )
     ''')
 
@@ -87,7 +88,16 @@ def init_db():
         )
     ''')
 
-    # Locations table
+    # Stores table (physical store locations like Inman, Central)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS stores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT
+        )
+    ''')
+
+    # Locations table (item storage locations within a store)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS locations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,6 +131,10 @@ def init_db():
     migrate_suppliers_locations()
     # Add location column to inventory if needed
     migrate_inventory_location()
+    # Add store column to inventory_counts for multi-store support
+    migrate_inventory_counts_store()
+    # Add cost column to inventory_counts for historical price tracking
+    migrate_inventory_counts_cost()
 
 def migrate_suppliers_locations():
     """Extract existing suppliers/locations from items and add to new tables."""
@@ -177,12 +191,90 @@ def migrate_inventory_location():
     conn = get_db()
     cursor = conn.cursor()
 
-    # Check if location column exists
+    # Check if location column exists in inventory_items
     cursor.execute("PRAGMA table_info(inventory_items)")
     columns = [col[1] for col in cursor.fetchall()]
 
     if 'location' not in columns:
         cursor.execute('ALTER TABLE inventory_items ADD COLUMN location TEXT DEFAULT ""')
+        conn.commit()
+
+    conn.close()
+
+def migrate_inventory_counts_store():
+    """Add store column to inventory_counts for multi-store support."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Check if store column exists in inventory_counts
+    cursor.execute("PRAGMA table_info(inventory_counts)")
+    columns = [col[1] for col in cursor.fetchall()]
+
+    if 'store' not in columns:
+        # We need to recreate the table with store column
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS inventory_counts_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                inventory_item_id TEXT,
+                store TEXT DEFAULT '',
+                month TEXT,
+                count1 REAL DEFAULT 0,
+                count2 REAL DEFAULT 0,
+                count3 REAL DEFAULT 0,
+                count4 REAL DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT,
+                FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id),
+                UNIQUE(inventory_item_id, store, month)
+            )
+        ''')
+
+        # Copy data from old table (use location as store if it exists, otherwise empty)
+        if 'location' in columns:
+            cursor.execute('''
+                INSERT INTO inventory_counts_new
+                (inventory_item_id, store, month, count1, count2, count3, count4, created_at, updated_at)
+                SELECT inventory_item_id, COALESCE(location, ''), month, count1, count2, count3, count4, created_at, updated_at
+                FROM inventory_counts
+            ''')
+        else:
+            cursor.execute('''
+                INSERT INTO inventory_counts_new
+                (inventory_item_id, store, month, count1, count2, count3, count4, created_at, updated_at)
+                SELECT inventory_item_id, '', month, count1, count2, count3, count4, created_at, updated_at
+                FROM inventory_counts
+            ''')
+
+        # Drop old table and rename new one
+        cursor.execute('DROP TABLE inventory_counts')
+        cursor.execute('ALTER TABLE inventory_counts_new RENAME TO inventory_counts')
+
+        # Recreate index
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_inventory_counts_item ON inventory_counts(inventory_item_id)')
+
+        conn.commit()
+
+    conn.close()
+
+def migrate_inventory_counts_cost():
+    """Add cost column to inventory_counts for historical price tracking."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Check if cost column exists in inventory_counts
+    cursor.execute("PRAGMA table_info(inventory_counts)")
+    columns = [col[1] for col in cursor.fetchall()]
+
+    if 'cost' not in columns:
+        # Add cost column
+        cursor.execute('ALTER TABLE inventory_counts ADD COLUMN cost REAL DEFAULT NULL')
+
+        # Populate existing counts with current item costs
+        cursor.execute('''
+            UPDATE inventory_counts
+            SET cost = (SELECT cost FROM inventory_items WHERE id = inventory_counts.inventory_item_id)
+        ''')
+
         conn.commit()
 
     conn.close()
@@ -232,6 +324,56 @@ def delete_supplier(supplier_id):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM suppliers WHERE id = ?', (supplier_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+# ==================== STORE FUNCTIONS ====================
+
+def get_all_stores():
+    """Get all stores (physical locations like Inman, Central)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name FROM stores ORDER BY name')
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def add_store(name):
+    """Add a new store."""
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    try:
+        cursor.execute('INSERT INTO stores (name, created_at) VALUES (?, ?)', (name, now))
+        conn.commit()
+        store_id = cursor.lastrowid
+        conn.close()
+        return {'id': store_id, 'name': name}
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+def update_store(store_id, name):
+    """Update a store name."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('UPDATE stores SET name = ? WHERE id = ?', (name, store_id))
+        conn.commit()
+        updated = cursor.rowcount > 0
+        conn.close()
+        return {'id': store_id, 'name': name} if updated else None
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+def delete_store(store_id):
+    """Delete a store."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM stores WHERE id = ?', (store_id,))
     deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()
@@ -334,46 +476,75 @@ def set_price_item_locations(price_item_id, location_names):
 
 # ==================== INVENTORY FUNCTIONS ====================
 
-def get_all_inventory(month=None):
-    """Get all inventory items with counts for specified month."""
+def get_all_inventory(month=None, store=None):
+    """Get all inventory items with counts for specified month and store."""
     conn = get_db()
     cursor = conn.cursor()
 
-    query = '''
-        SELECT i.id, i.supplier, i.location, i.item, i.unit, i.cost, i.is_custom,
+    # Build JOIN condition for counts
+    join_conditions = []
+    join_params = []
+    if month:
+        join_conditions.append("c.month = ?")
+        join_params.append(month)
+    if store:
+        join_conditions.append("c.store = ?")
+        join_params.append(store)
+
+    join_clause = " AND ".join(join_conditions) if join_conditions else "1=1"
+
+    query = f'''
+        SELECT i.id, i.supplier, i.location, i.item, i.unit,
+               COALESCE(c.cost, i.cost) as cost,
+               i.cost as current_cost,
+               i.is_custom,
                i.created_at, i.updated_at,
                COALESCE(c.count1, 0) as count1,
                COALESCE(c.count2, 0) as count2,
                COALESCE(c.count3, 0) as count3,
                COALESCE(c.count4, 0) as count4
         FROM inventory_items i
-        LEFT JOIN inventory_counts c ON i.id = c.inventory_item_id {}
+        LEFT JOIN inventory_counts c ON i.id = c.inventory_item_id AND {join_clause}
         ORDER BY i.item
-    '''.format('AND c.month = ?' if month else '')
+    '''
 
-    cursor.execute(query, (month,) if month else ())
+    cursor.execute(query, join_params)
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
-def get_inventory_item(item_id, month=None):
-    """Get a single inventory item by ID with counts for specified month."""
+def get_inventory_item(item_id, month=None, store=None):
+    """Get a single inventory item by ID with counts for specified month and store."""
     conn = get_db()
     cursor = conn.cursor()
 
+    # Build JOIN condition for counts
+    join_conditions = []
+    join_params = []
     if month:
-        query = '''
-            SELECT i.id, i.supplier, i.location, i.item, i.unit, i.cost, i.is_custom,
+        join_conditions.append("c.month = ?")
+        join_params.append(month)
+    if store:
+        join_conditions.append("c.store = ?")
+        join_params.append(store)
+
+    if join_conditions:
+        join_clause = " AND ".join(join_conditions)
+        query = f'''
+            SELECT i.id, i.supplier, i.location, i.item, i.unit,
+                   COALESCE(c.cost, i.cost) as cost,
+                   i.cost as current_cost,
+                   i.is_custom,
                    i.created_at, i.updated_at,
                    COALESCE(c.count1, 0) as count1,
                    COALESCE(c.count2, 0) as count2,
                    COALESCE(c.count3, 0) as count3,
                    COALESCE(c.count4, 0) as count4
             FROM inventory_items i
-            LEFT JOIN inventory_counts c ON i.id = c.inventory_item_id AND c.month = ?
+            LEFT JOIN inventory_counts c ON i.id = c.inventory_item_id AND {join_clause}
             WHERE i.id = ?
         '''
-        cursor.execute(query, (month, item_id))
+        cursor.execute(query, join_params + [item_id])
     else:
         cursor.execute('SELECT * FROM inventory_items WHERE id = ?', (item_id,))
 
@@ -390,8 +561,8 @@ def get_inventory_months():
     conn.close()
     return [row['month'] for row in rows]
 
-def update_inventory_item(item_id, data, month=None):
-    """Update an inventory item and its counts for specific month."""
+def update_inventory_item(item_id, data, month=None, store=None):
+    """Update an inventory item and its counts for specific month and store."""
     conn = get_db()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
@@ -411,31 +582,37 @@ def update_inventory_item(item_id, data, month=None):
         item_id
     ))
 
-    # Update counts for specific month if provided
+    # Update counts for specific month and store if provided
     if month:
+        store_name = store or ''
+        # Get the current item cost to store with the count (for historical tracking)
+        item_cost = data.get('cost', 0)
         cursor.execute('''
-            INSERT INTO inventory_counts (inventory_item_id, month, count1, count2, count3, count4, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(inventory_item_id, month) DO UPDATE SET
+            INSERT INTO inventory_counts (inventory_item_id, store, month, count1, count2, count3, count4, cost, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(inventory_item_id, store, month) DO UPDATE SET
                 count1 = excluded.count1,
                 count2 = excluded.count2,
                 count3 = excluded.count3,
                 count4 = excluded.count4,
+                cost = COALESCE(inventory_counts.cost, excluded.cost),
                 updated_at = excluded.updated_at
         ''', (
             item_id,
+            store_name,
             month,
             data.get('count1', 0),
             data.get('count2', 0),
             data.get('count3', 0),
             data.get('count4', 0),
+            item_cost,
             now,
             now
         ))
 
     conn.commit()
     conn.close()
-    return get_inventory_item(item_id, month)
+    return get_inventory_item(item_id, month, store)
 
 def add_inventory_item(data):
     """Add a new custom inventory item."""
@@ -474,12 +651,24 @@ def delete_inventory_item(item_id):
     conn.close()
     return deleted
 
-def clear_all_counts(month=None):
-    """Reset all inventory counts to zero for a specific month."""
+def clear_all_counts(month=None, store=None):
+    """Reset all inventory counts to zero for a specific month and/or store."""
     conn = get_db()
     cursor = conn.cursor()
+
+    conditions = []
+    params = []
     if month:
-        cursor.execute('DELETE FROM inventory_counts WHERE month = ?', (month,))
+        conditions.append('month = ?')
+        params.append(month)
+    if store:
+        conditions.append('store = ?')
+        params.append(store)
+
+    if conditions:
+        query = 'DELETE FROM inventory_counts WHERE ' + ' AND '.join(conditions)
+        cursor.execute(query, params)
+
     conn.commit()
     conn.close()
 

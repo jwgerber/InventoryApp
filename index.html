@@ -303,6 +303,100 @@
             #search, #price-search { font-size: 16px; padding: 12px; }
             .header-stats { display: none; }
         }
+
+        /* Multi-select dropdown */
+        .multi-select {
+            position: relative;
+            width: 100%;
+        }
+        .multi-select-display {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 42px;
+        }
+        .multi-select-display:hover {
+            border-color: #3498db;
+        }
+        .multi-select.open .multi-select-display {
+            border-color: #3498db;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        .multi-select-display-text {
+            flex: 1;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .multi-select-display-text.placeholder {
+            color: #888;
+        }
+        .multi-select-arrow {
+            margin-left: 8px;
+            transition: transform 0.2s;
+        }
+        .multi-select.open .multi-select-arrow {
+            transform: rotate(180deg);
+        }
+        .multi-select-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid #3498db;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+        }
+        .multi-select.open .multi-select-dropdown {
+            display: block;
+        }
+        .multi-select-option {
+            padding: 10px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.1s;
+        }
+        .multi-select-option:hover {
+            background: #f0f7ff;
+        }
+        .multi-select-option.selected {
+            background: #e8f4f8;
+        }
+        .multi-select-check {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: white;
+            flex-shrink: 0;
+        }
+        .multi-select-option.selected .multi-select-check {
+            background: #3498db;
+            border-color: #3498db;
+        }
+        .multi-select-label {
+            flex: 1;
+        }
     </style>
 </head>
 <body>
@@ -329,10 +423,16 @@
             </header>
 
             <div class="search-section">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                    <label style="font-weight: 600; font-size: 14px;">Counting for:</label>
+                    <select id="count-store-selector" style="padding: 12px 16px; border: 3px solid #9b59b6; border-radius: 8px; font-size: 16px; font-weight: 600; background: white; cursor: pointer; min-width: 200px;" onchange="changeCountStore(this.value)">
+                        <option value="">-- Select Store --</option>
+                    </select>
+                    <select id="month-selector" style="padding: 12px 16px; border: 3px solid #27ae60; border-radius: 8px; font-size: 16px; font-weight: 600; background: white; cursor: pointer;" onchange="changeMonth(this.value)">
+                    </select>
+                </div>
                 <div class="search-container">
                     <input type="text" id="search" placeholder="Type to search, Enter to jump to count..." autofocus>
-                    <select id="month-selector" style="padding: 14px 18px; border: 3px solid #27ae60; border-radius: 8px; font-size: 16px; font-weight: 600; background: white; cursor: pointer;" onchange="changeMonth(this.value)">
-                    </select>
                 </div>
                 <div class="search-hint">
                     <kbd>Enter</kbd> jump to first result
@@ -344,9 +444,6 @@
                     <button class="filter-chip active" data-filter="">All</button>
                     <button class="filter-chip" data-filter="uncounted">Uncounted</button>
                     <button class="filter-chip" data-filter="counted">Counted</button>
-                    <select id="inventory-location-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
-                        <option value="">All Locations</option>
-                    </select>
                 </div>
                 <div class="actions-row">
                     <button class="btn btn-primary" onclick="openAddModal()">+ Add Item</button>
@@ -408,7 +505,7 @@
                     <select id="price-supplier-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
                         <option value="">All Suppliers</option>
                     </select>
-                    <button class="btn btn-primary" onclick="openAddPriceModal()">+ Add Price Item</button>
+                    <button class="btn btn-primary" onclick="openAddPriceModal()">+ Add Item</button>
                     <button class="btn btn-primary" onclick="openUpdatePriceModal()">Update Prices</button>
                     <button class="btn btn-success" onclick="syncPricesToInventory()">Sync to Inventory</button>
                     <button class="btn" style="background:#9b59b6;color:white" onclick="exportPricesCSV()">Export CSV</button>
@@ -503,9 +600,15 @@
                     <input type="text" id="edit-price-item-name" required>
                 </div>
                 <div class="form-group">
-                    <label>Locations (select multiple)</label>
-                    <div id="edit-price-locations" class="location-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:1px solid #ddd;border-radius:6px;max-height:120px;overflow-y:auto;background:#fafafa;">
-                        <!-- Populated by JS -->
+                    <label>Locations</label>
+                    <div id="edit-price-locations" class="multi-select">
+                        <div class="multi-select-display" onclick="toggleMultiSelect('edit-price-locations')">
+                            <span class="multi-select-display-text placeholder">Select locations...</span>
+                            <span class="multi-select-arrow">▼</span>
+                        </div>
+                        <div class="multi-select-dropdown">
+                            <!-- Populated by JS -->
+                        </div>
                     </div>
                 </div>
                 <div class="form-group">
@@ -605,11 +708,11 @@
         </div>
     </div>
 
-    <!-- Add Price Item Modal -->
+    <!-- Add Item Modal -->
     <div class="modal" id="add-price-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Add Price Item</h2>
+                <h2>Add Item</h2>
                 <button class="close-btn" onclick="closeAddPriceModal()">&times;</button>
             </div>
             <form id="add-price-form" onsubmit="addNewPriceItem(event)">
@@ -618,9 +721,15 @@
                     <input type="text" id="new-price-item" required>
                 </div>
                 <div class="form-group">
-                    <label>Locations (select multiple)</label>
-                    <div id="new-price-locations" class="location-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:1px solid #ddd;border-radius:6px;max-height:120px;overflow-y:auto;background:#fafafa;">
-                        <!-- Populated by JS -->
+                    <label>Locations</label>
+                    <div id="new-price-locations" class="multi-select">
+                        <div class="multi-select-display" onclick="toggleMultiSelect('new-price-locations')">
+                            <span class="multi-select-display-text placeholder">Select locations...</span>
+                            <span class="multi-select-arrow">▼</span>
+                        </div>
+                        <div class="multi-select-dropdown">
+                            <!-- Populated by JS -->
+                        </div>
                     </div>
                 </div>
                 <div class="form-group">
@@ -656,7 +765,7 @@
                     </label>
                 </div>
                 <div class="form-actions">
-                    <button type="submit" class="btn btn-primary" style="flex:1">Add Price Item</button>
+                    <button type="submit" class="btn btn-primary" style="flex:1">Add Item</button>
                     <button type="button" class="btn" style="background:#eee" onclick="closeAddPriceModal()">Cancel</button>
                 </div>
             </form>
@@ -673,6 +782,7 @@
             <div style="display: flex; gap: 0; margin-bottom: 15px; border-bottom: 2px solid #eee;">
                 <button class="settings-tab active" onclick="switchSettingsTab('suppliers')" id="suppliers-tab-btn">Suppliers</button>
                 <button class="settings-tab" onclick="switchSettingsTab('locations')" id="locations-tab-btn">Locations</button>
+                <button class="settings-tab" onclick="switchSettingsTab('stores')" id="stores-tab-btn">Stores</button>
             </div>
             <style>
                 .settings-tab { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -2px; }
@@ -706,6 +816,14 @@
                     <button class="btn btn-primary" onclick="addNewLocation()">Add</button>
                 </div>
             </div>
+            <div id="stores-settings" class="settings-panel" style="display: none;">
+                <p style="color: #666; font-size: 13px; margin-bottom: 10px;">Stores are physical locations (e.g., Inman, Central) that track inventory separately.</p>
+                <div class="settings-list" id="stores-list-settings"></div>
+                <div class="settings-add">
+                    <input type="text" id="new-store-name" placeholder="New store name...">
+                    <button class="btn btn-primary" onclick="addNewStore()">Add</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -729,6 +847,7 @@
         let priceCache = [];
         let supplierCache = [];
         let locationCache = [];
+        let storeCache = [];
         let selectedMonth = getCurrentMonth();
         let availableMonths = [];
 
@@ -769,7 +888,12 @@
         }
 
         async function loadInventory() {
-            inventoryCache = await api(`/inventory?month=${selectedMonth}`);
+            let url = `/inventory?month=${selectedMonth}`;
+            if (currentCountStore) {
+                url += `&store=${encodeURIComponent(currentCountStore)}`;
+            }
+            inventoryCache = await api(url);
+            renderTable();
             return inventoryCache;
         }
 
@@ -788,9 +912,14 @@
             return locationCache;
         }
 
+        async function loadStores() {
+            storeCache = await api('/stores');
+            return storeCache;
+        }
+
         // ==================== STATE ====================
         let currentFilter = '';
-        let currentInventoryLocation = '';
+        let currentCountStore = '';  // Store for inventory counting (Inman, Central, etc.)
         let currentPriceSupplier = '';
         let selectedPriceItem = null;
 
@@ -864,11 +993,10 @@
                 const matchSearch = !search ||
                     item.item.toLowerCase().includes(search) ||
                     (item.supplier || '').toLowerCase().includes(search);
-                const matchLocation = !currentInventoryLocation || item.location === currentInventoryLocation;
                 const total = calcTotal(item);
                 const matchCount = currentFilter === 'counted' ? total > 0 :
                                   currentFilter === 'uncounted' ? total === 0 : true;
-                return matchSearch && matchLocation && matchCount;
+                return matchSearch && matchCount;
             });
         }
 
@@ -937,11 +1065,18 @@
             updateRowTotals(row, id);
             updateGrandTotals();
 
-            // Save to server with current month
+            // Check if store is selected
+            if (!currentCountStore) {
+                showNavHint('Select a store first!');
+                input.value = '';
+                return;
+            }
+
+            // Save to server with current month and store
             try {
                 await api(`/inventory/${id}`, {
                     method: 'PUT',
-                    body: JSON.stringify({ ...item, month: selectedMonth })
+                    body: JSON.stringify({ ...item, month: selectedMonth, store: currentCountStore })
                 });
                 // Refresh month list if this is first entry for this month
                 if (!availableMonths.includes(selectedMonth)) {
@@ -956,7 +1091,6 @@
         async function changeMonth(month) {
             selectedMonth = month;
             await loadInventory();
-            renderTable();
             showNavHint(`Loaded ${formatMonthDisplay(month)}`);
         }
 
@@ -1052,14 +1186,17 @@
         }
 
         async function clearAllCounts() {
-            if (!confirm(`Clear all inventory counts for ${formatMonthDisplay(selectedMonth)}?`)) return;
+            if (!currentCountStore) {
+                alert('Please select a store first.');
+                return;
+            }
+            if (!confirm(`Clear all inventory counts for ${currentCountStore} - ${formatMonthDisplay(selectedMonth)}?`)) return;
             try {
                 await api('/inventory/clear-counts', {
                     method: 'POST',
-                    body: JSON.stringify({ month: selectedMonth })
+                    body: JSON.stringify({ month: selectedMonth, store: currentCountStore })
                 });
                 await loadInventory();
-                renderTable();
                 showNavHint('Counts cleared!');
             } catch (err) {
                 alert('Failed to clear counts');
@@ -1077,19 +1214,10 @@
 
         function populateLocations() {
             const locations = getLocations();
-            const inventoryFilter = document.getElementById('inventory-location-filter');
             const addItemSelect = document.getElementById('new-location');
-            const checkboxContainer = document.getElementById('new-price-locations');
+            const addPriceLocations = document.getElementById('new-price-locations');
 
-            // Populate inventory filter dropdown
-            if (inventoryFilter) {
-                inventoryFilter.innerHTML = '<option value="">All Locations</option>';
-                locations.forEach(l => {
-                    inventoryFilter.innerHTML += `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`;
-                });
-            }
-
-            // Populate Add Item modal location dropdown
+            // Populate Add Inventory Item modal location dropdown
             if (addItemSelect) {
                 addItemSelect.innerHTML = '<option value="">-- Select Location --</option>';
                 locations.forEach(l => {
@@ -1097,19 +1225,34 @@
                 });
             }
 
-            // Populate Add Price modal checkboxes
-            if (checkboxContainer) {
-                if (locations.length === 0) {
-                    checkboxContainer.innerHTML = '<span style="color:#888;font-size:13px;">No locations. Add some in Settings.</span>';
-                } else {
-                    checkboxContainer.innerHTML = locations.map(l => `
-                        <label style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:white;border:1px solid #ddd;border-radius:15px;cursor:pointer;font-size:13px;">
-                            <input type="checkbox" value="${escapeHtml(l)}" style="margin:0;">
-                            ${escapeHtml(l)}
-                        </label>
-                    `).join('');
-                }
+            // Populate Add Item (price) modal multi-select dropdown
+            if (addPriceLocations) {
+                populateMultiSelect('new-price-locations', locations, []);
             }
+        }
+
+        function getStores() {
+            return storeCache.map(s => s.name).sort();
+        }
+
+        function populateStores() {
+            const stores = getStores();
+            const countStoreSelector = document.getElementById('count-store-selector');
+
+            // Populate count store selector (main inventory store picker)
+            if (countStoreSelector) {
+                const currentVal = countStoreSelector.value;
+                countStoreSelector.innerHTML = '<option value="">-- Select Store --</option>';
+                stores.forEach(s => {
+                    const selected = s === currentVal ? 'selected' : '';
+                    countStoreSelector.innerHTML += `<option value="${escapeHtml(s)}" ${selected}>${escapeHtml(s)}</option>`;
+                });
+            }
+        }
+
+        function changeCountStore(store) {
+            currentCountStore = store;
+            loadInventory();
         }
 
         function getCurrentMonthDisplay() {
@@ -1276,6 +1419,18 @@
 
             const historyList = document.getElementById('price-history-list');
             const entries = Object.entries(item.priceHistory || {});
+            // Sort by date (month format is like "Jan'26", "Dec'25")
+            entries.sort((a, b) => {
+                const parseMonth = (m) => {
+                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    const match = m.match(/([A-Za-z]+)'(\d+)/);
+                    if (!match) return 0;
+                    const monthIdx = months.indexOf(match[1]);
+                    const year = parseInt(match[2]) + 2000;
+                    return year * 12 + monthIdx;
+                };
+                return parseMonth(b[0]) - parseMonth(a[0]); // Descending (newest first)
+            });
             historyList.innerHTML = entries.map(([month, price]) => `
                 <div class="price-history-item">
                     <span>${month}</span>
@@ -1356,6 +1511,7 @@
             document.getElementById('settings-modal').classList.add('active');
             renderSettingsSuppliers();
             renderSettingsLocations();
+            renderSettingsStores();
         }
 
         function closeSettingsModal() {
@@ -1368,6 +1524,7 @@
 
             document.getElementById('suppliers-settings').style.display = tab === 'suppliers' ? 'block' : 'none';
             document.getElementById('locations-settings').style.display = tab === 'locations' ? 'block' : 'none';
+            document.getElementById('stores-settings').style.display = tab === 'stores' ? 'block' : 'none';
         }
 
         function renderSettingsSuppliers() {
@@ -1514,6 +1671,79 @@
             }
         }
 
+        // Store settings functions
+        function renderSettingsStores() {
+            const list = document.getElementById('stores-list-settings');
+            if (storeCache.length === 0) {
+                list.innerHTML = '<div class="settings-item" style="color:#888;justify-content:center;">No stores yet</div>';
+                return;
+            }
+            list.innerHTML = storeCache.map(s => `
+                <div class="settings-item" id="store-item-${s.id}">
+                    <span class="settings-item-name">${escapeHtml(s.name)}</span>
+                    <button class="settings-item-btn edit" onclick="editStore(${s.id}, '${escapeHtml(s.name)}')">Edit</button>
+                    <button class="settings-item-btn delete" onclick="deleteStore(${s.id})">Delete</button>
+                </div>
+            `).join('');
+        }
+
+        async function addNewStore() {
+            const input = document.getElementById('new-store-name');
+            const name = input.value.trim();
+            if (!name) return;
+
+            try {
+                await api('/stores', { method: 'POST', body: JSON.stringify({ name }) });
+                input.value = '';
+                await loadStores();
+                renderSettingsStores();
+                populateStores();
+                showNavHint('Store added!');
+            } catch (err) {
+                alert('Failed to add store. It may already exist.');
+            }
+        }
+
+        function editStore(id, currentName) {
+            const item = document.getElementById(`store-item-${id}`);
+            item.innerHTML = `
+                <input type="text" class="settings-item-input" id="edit-store-${id}" value="${escapeHtml(currentName)}">
+                <button class="settings-item-btn save" onclick="saveStore(${id})">Save</button>
+                <button class="settings-item-btn cancel" onclick="renderSettingsStores()">Cancel</button>
+            `;
+            document.getElementById(`edit-store-${id}`).focus();
+        }
+
+        async function saveStore(id) {
+            const input = document.getElementById(`edit-store-${id}`);
+            const name = input.value.trim();
+            if (!name) return;
+
+            try {
+                await api(`/stores/${id}`, { method: 'PUT', body: JSON.stringify({ name }) });
+                await loadStores();
+                renderSettingsStores();
+                populateStores();
+                showNavHint('Store updated!');
+            } catch (err) {
+                alert('Failed to update store. Name may already exist.');
+            }
+        }
+
+        async function deleteStore(id) {
+            if (!confirm('Delete this store? This will NOT delete inventory counts, but they will no longer be associated with this store.')) return;
+
+            try {
+                await api(`/stores/${id}`, { method: 'DELETE' });
+                await loadStores();
+                renderSettingsStores();
+                populateStores();
+                showNavHint('Store deleted!');
+            } catch (err) {
+                alert('Failed to delete store');
+            }
+        }
+
         // ==================== ADD PRICE ITEM MODAL ====================
         function openAddPriceModal() {
             document.getElementById('add-price-modal').classList.add('active');
@@ -1544,9 +1774,7 @@
             e.preventDefault();
 
             const itemName = document.getElementById('new-price-item').value.trim();
-            // Get all checked location checkboxes
-            const locationCheckboxes = document.querySelectorAll('#new-price-locations input[type="checkbox"]:checked');
-            const locations = Array.from(locationCheckboxes).map(cb => cb.value);
+            const locations = getMultiSelectValues('new-price-locations');
             const supplier = document.getElementById('new-price-supplier').value.trim();
             const purchaseUnit = document.getElementById('new-price-purchase-unit').value.trim();
             const unitsPerInv = parseFloat(document.getElementById('new-price-units-per-inv').value) || 1;
@@ -1578,6 +1806,7 @@
                         method: 'POST',
                         body: JSON.stringify({
                             item: itemName,
+                            location: locations[0] || '',
                             supplier: supplier,
                             unit: purchaseUnit,
                             cost: perUnitCost
@@ -1621,23 +1850,10 @@
                 supplierSelect.innerHTML += `<option value="${escapeHtml(s)}" ${selected}>${escapeHtml(s)}</option>`;
             });
 
-            // Populate location checkboxes
+            // Populate location multi-select dropdown
             const locations = getLocations();
             const itemLocations = item.locations || [];
-            const container = document.getElementById('edit-price-locations');
-            if (locations.length === 0) {
-                container.innerHTML = '<span style="color:#888;font-size:13px;">No locations. Add some in Settings.</span>';
-            } else {
-                container.innerHTML = locations.map(l => {
-                    const checked = itemLocations.includes(l) ? 'checked' : '';
-                    return `
-                        <label style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:white;border:1px solid #ddd;border-radius:15px;cursor:pointer;font-size:13px;">
-                            <input type="checkbox" value="${escapeHtml(l)}" ${checked} style="margin:0;">
-                            ${escapeHtml(l)}
-                        </label>
-                    `;
-                }).join('');
-            }
+            populateMultiSelect('edit-price-locations', locations, itemLocations);
 
             // Populate month selector
             const monthSelect = document.getElementById('edit-price-month');
@@ -1653,6 +1869,71 @@
             document.getElementById('edit-price-item-name').focus();
         }
 
+        // ==================== MULTI-SELECT DROPDOWN ====================
+        function populateMultiSelect(containerId, options, selectedValues = []) {
+            const container = document.getElementById(containerId);
+            const dropdown = container.querySelector('.multi-select-dropdown');
+
+            if (options.length === 0) {
+                dropdown.innerHTML = '<div style="padding:10px;color:#888;font-size:13px;">No locations available. Add some in Settings.</div>';
+            } else {
+                dropdown.innerHTML = options.map(opt => {
+                    const isSelected = selectedValues.includes(opt);
+                    return `
+                        <div class="multi-select-option ${isSelected ? 'selected' : ''}" data-value="${escapeHtml(opt)}" onclick="toggleMultiSelectOption(this)">
+                            <span class="multi-select-check">${isSelected ? '✓' : ''}</span>
+                            <span class="multi-select-label">${escapeHtml(opt)}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            updateMultiSelectDisplay(containerId);
+        }
+
+        function toggleMultiSelect(containerId) {
+            const container = document.getElementById(containerId);
+            container.classList.toggle('open');
+        }
+
+        function toggleMultiSelectOption(optionEl) {
+            optionEl.classList.toggle('selected');
+            const checkEl = optionEl.querySelector('.multi-select-check');
+            checkEl.textContent = optionEl.classList.contains('selected') ? '✓' : '';
+
+            const container = optionEl.closest('.multi-select');
+            updateMultiSelectDisplay(container.id);
+        }
+
+        function updateMultiSelectDisplay(containerId) {
+            const container = document.getElementById(containerId);
+            const displayText = container.querySelector('.multi-select-display-text');
+            const selected = getMultiSelectValues(containerId);
+
+            if (selected.length === 0) {
+                displayText.textContent = 'Select locations...';
+                displayText.classList.add('placeholder');
+            } else {
+                displayText.textContent = selected.join(', ');
+                displayText.classList.remove('placeholder');
+            }
+        }
+
+        function getMultiSelectValues(containerId) {
+            const container = document.getElementById(containerId);
+            const selectedOptions = container.querySelectorAll('.multi-select-option.selected');
+            return Array.from(selectedOptions).map(opt => opt.dataset.value);
+        }
+
+        // Close multi-select when clicking outside
+        document.addEventListener('click', (e) => {
+            document.querySelectorAll('.multi-select.open').forEach(ms => {
+                if (!ms.contains(e.target)) {
+                    ms.classList.remove('open');
+                }
+            });
+        });
+
         function closeEditPriceModal() {
             document.getElementById('edit-price-modal').classList.remove('active');
         }
@@ -1662,8 +1943,7 @@
 
             const id = document.getElementById('edit-price-id').value;
             const itemName = document.getElementById('edit-price-item-name').value.trim();
-            const locationCheckboxes = document.querySelectorAll('#edit-price-locations input[type="checkbox"]:checked');
-            const locations = Array.from(locationCheckboxes).map(cb => cb.value);
+            const locations = getMultiSelectValues('edit-price-locations');
             const supplier = document.getElementById('edit-price-supplier').value.trim();
             const purchaseUnit = document.getElementById('edit-price-purchase-unit').value.trim();
             const unitsPerInv = parseFloat(document.getElementById('edit-price-units-per-inv').value) || 1;
@@ -1778,11 +2058,6 @@
             });
         });
 
-        document.getElementById('inventory-location-filter').addEventListener('change', (e) => {
-            currentInventoryLocation = e.target.value;
-            renderTable();
-        });
-
         document.getElementById('price-search').addEventListener('input', renderPriceTable);
         document.getElementById('price-supplier-filter').addEventListener('change', (e) => {
             currentPriceSupplier = e.target.value;
@@ -1809,9 +2084,10 @@
         async function init() {
             try {
                 await loadInventoryMonths();
-                await Promise.all([loadInventory(), loadPrices(), loadSuppliers(), loadLocations()]);
+                await Promise.all([loadInventory(), loadPrices(), loadSuppliers(), loadLocations(), loadStores()]);
                 populateSuppliers();
                 populateLocations();
+                populateStores();
                 renderTable();
                 document.getElementById('search').focus();
             } catch (err) {
