@@ -20,6 +20,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS inventory_items (
             id TEXT PRIMARY KEY,
             supplier TEXT DEFAULT '',
+            location TEXT DEFAULT '',
             item TEXT NOT NULL,
             unit TEXT DEFAULT '',
             cost REAL DEFAULT 0,
@@ -77,12 +78,256 @@ def init_db():
         )
     ''')
 
+    # Suppliers table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS suppliers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT
+        )
+    ''')
+
+    # Locations table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT
+        )
+    ''')
+
+    # Price item locations junction table (many-to-many)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS price_item_locations (
+            price_item_id TEXT,
+            location_id INTEGER,
+            PRIMARY KEY (price_item_id, location_id),
+            FOREIGN KEY (price_item_id) REFERENCES price_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE
+        )
+    ''')
+
     # Create indexes for faster lookups
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_inventory_item ON inventory_items(item)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_price_item ON price_items(item)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history(price_item_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_inventory_counts_month ON inventory_counts(month)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_inventory_counts_item ON inventory_counts(inventory_item_id)')
+
+    conn.commit()
+    conn.close()
+
+    # Migrate existing suppliers/locations to new tables
+    migrate_suppliers_locations()
+    # Add location column to inventory if needed
+    migrate_inventory_location()
+
+def migrate_suppliers_locations():
+    """Extract existing suppliers/locations from items and add to new tables."""
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+
+    # Get unique suppliers from inventory_items
+    cursor.execute('SELECT DISTINCT supplier FROM inventory_items WHERE supplier != ""')
+    for row in cursor.fetchall():
+        try:
+            cursor.execute('INSERT OR IGNORE INTO suppliers (name, created_at) VALUES (?, ?)',
+                         (row['supplier'], now))
+        except:
+            pass
+
+    # Get unique suppliers from price_items
+    cursor.execute('SELECT DISTINCT supplier FROM price_items WHERE supplier != ""')
+    for row in cursor.fetchall():
+        try:
+            cursor.execute('INSERT OR IGNORE INTO suppliers (name, created_at) VALUES (?, ?)',
+                         (row['supplier'], now))
+        except:
+            pass
+
+    # Get unique locations from price_items
+    cursor.execute('SELECT DISTINCT location FROM price_items WHERE location != ""')
+    for row in cursor.fetchall():
+        try:
+            cursor.execute('INSERT OR IGNORE INTO locations (name, created_at) VALUES (?, ?)',
+                         (row['location'], now))
+        except:
+            pass
+
+    # Migrate existing single locations to junction table
+    cursor.execute('''
+        SELECT p.id, p.location, l.id as location_id
+        FROM price_items p
+        JOIN locations l ON p.location = l.name
+        WHERE p.location != ""
+    ''')
+    for row in cursor.fetchall():
+        try:
+            cursor.execute('INSERT OR IGNORE INTO price_item_locations (price_item_id, location_id) VALUES (?, ?)',
+                         (row['id'], row['location_id']))
+        except:
+            pass
+
+    conn.commit()
+    conn.close()
+
+def migrate_inventory_location():
+    """Add location column to inventory_items if it doesn't exist."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Check if location column exists
+    cursor.execute("PRAGMA table_info(inventory_items)")
+    columns = [col[1] for col in cursor.fetchall()]
+
+    if 'location' not in columns:
+        cursor.execute('ALTER TABLE inventory_items ADD COLUMN location TEXT DEFAULT ""')
+        conn.commit()
+
+    conn.close()
+
+# ==================== SUPPLIER FUNCTIONS ====================
+
+def get_all_suppliers():
+    """Get all suppliers."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name FROM suppliers ORDER BY name')
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def add_supplier(name):
+    """Add a new supplier."""
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    try:
+        cursor.execute('INSERT INTO suppliers (name, created_at) VALUES (?, ?)', (name, now))
+        conn.commit()
+        supplier_id = cursor.lastrowid
+        conn.close()
+        return {'id': supplier_id, 'name': name}
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+def update_supplier(supplier_id, name):
+    """Update a supplier name."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('UPDATE suppliers SET name = ? WHERE id = ?', (name, supplier_id))
+        conn.commit()
+        updated = cursor.rowcount > 0
+        conn.close()
+        return {'id': supplier_id, 'name': name} if updated else None
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+def delete_supplier(supplier_id):
+    """Delete a supplier."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM suppliers WHERE id = ?', (supplier_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+# ==================== LOCATION FUNCTIONS ====================
+
+def get_all_locations():
+    """Get all locations."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name FROM locations ORDER BY name')
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def add_location(name):
+    """Add a new location."""
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    try:
+        cursor.execute('INSERT INTO locations (name, created_at) VALUES (?, ?)', (name, now))
+        conn.commit()
+        location_id = cursor.lastrowid
+        conn.close()
+        return {'id': location_id, 'name': name}
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+def update_location(location_id, name):
+    """Update a location name."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('UPDATE locations SET name = ? WHERE id = ?', (name, location_id))
+        conn.commit()
+        updated = cursor.rowcount > 0
+        conn.close()
+        return {'id': location_id, 'name': name} if updated else None
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+def delete_location(location_id):
+    """Delete a location."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM locations WHERE id = ?', (location_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+# ==================== PRICE ITEM LOCATIONS FUNCTIONS ====================
+
+def get_price_item_locations(price_item_id):
+    """Get all location names for a price item."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT l.name FROM locations l
+        JOIN price_item_locations pil ON l.id = pil.location_id
+        WHERE pil.price_item_id = ?
+        ORDER BY l.name
+    ''', (price_item_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [row['name'] for row in rows]
+
+def set_price_item_locations(price_item_id, location_names):
+    """Set locations for a price item (replaces existing)."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Clear existing locations
+    cursor.execute('DELETE FROM price_item_locations WHERE price_item_id = ?', (price_item_id,))
+
+    # Add new locations
+    for name in location_names:
+        if not name:
+            continue
+        # Get or create location
+        cursor.execute('SELECT id FROM locations WHERE name = ?', (name,))
+        row = cursor.fetchone()
+        if row:
+            location_id = row['id']
+        else:
+            now = datetime.now().isoformat()
+            cursor.execute('INSERT INTO locations (name, created_at) VALUES (?, ?)', (name, now))
+            location_id = cursor.lastrowid
+
+        # Add to junction table
+        cursor.execute('INSERT OR IGNORE INTO price_item_locations (price_item_id, location_id) VALUES (?, ?)',
+                     (price_item_id, location_id))
 
     conn.commit()
     conn.close()
@@ -95,7 +340,7 @@ def get_all_inventory(month=None):
     cursor = conn.cursor()
 
     query = '''
-        SELECT i.id, i.supplier, i.item, i.unit, i.cost, i.is_custom,
+        SELECT i.id, i.supplier, i.location, i.item, i.unit, i.cost, i.is_custom,
                i.created_at, i.updated_at,
                COALESCE(c.count1, 0) as count1,
                COALESCE(c.count2, 0) as count2,
@@ -118,7 +363,7 @@ def get_inventory_item(item_id, month=None):
 
     if month:
         query = '''
-            SELECT i.id, i.supplier, i.item, i.unit, i.cost, i.is_custom,
+            SELECT i.id, i.supplier, i.location, i.item, i.unit, i.cost, i.is_custom,
                    i.created_at, i.updated_at,
                    COALESCE(c.count1, 0) as count1,
                    COALESCE(c.count2, 0) as count2,
@@ -151,13 +396,14 @@ def update_inventory_item(item_id, data, month=None):
     cursor = conn.cursor()
     now = datetime.now().isoformat()
 
-    # Update base item info (supplier, item, unit, cost)
+    # Update base item info (supplier, location, item, unit, cost)
     cursor.execute('''
         UPDATE inventory_items
-        SET supplier = ?, item = ?, unit = ?, cost = ?, updated_at = ?
+        SET supplier = ?, location = ?, item = ?, unit = ?, cost = ?, updated_at = ?
         WHERE id = ?
     ''', (
         data.get('supplier', ''),
+        data.get('location', ''),
         data.get('item', ''),
         data.get('unit', ''),
         data.get('cost', 0),
@@ -201,11 +447,12 @@ def add_inventory_item(data):
 
     cursor.execute('''
         INSERT INTO inventory_items
-        (id, supplier, item, unit, cost, count1, count2, count3, count4, is_custom, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 1, ?, ?)
+        (id, supplier, location, item, unit, cost, count1, count2, count3, count4, is_custom, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 1, ?, ?)
     ''', (
         item_id,
         data.get('supplier', ''),
+        data.get('location', ''),
         data.get('item', ''),
         data.get('unit', ''),
         data.get('cost', 0),
@@ -239,7 +486,7 @@ def clear_all_counts(month=None):
 # ==================== PRICE FUNCTIONS ====================
 
 def get_all_prices():
-    """Get all price items with their history."""
+    """Get all price items with their history and locations."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -247,7 +494,7 @@ def get_all_prices():
     cursor.execute('SELECT * FROM price_items ORDER BY item')
     items = [dict(row) for row in cursor.fetchall()]
 
-    # Get history for each item
+    # Get history and locations for each item
     for item in items:
         cursor.execute('''
             SELECT month, price FROM price_history
@@ -256,11 +503,20 @@ def get_all_prices():
         ''', (item['id'],))
         item['priceHistory'] = {row['month']: row['price'] for row in cursor.fetchall()}
 
+        # Get locations array
+        cursor.execute('''
+            SELECT l.name FROM locations l
+            JOIN price_item_locations pil ON l.id = pil.location_id
+            WHERE pil.price_item_id = ?
+            ORDER BY l.name
+        ''', (item['id'],))
+        item['locations'] = [row['name'] for row in cursor.fetchall()]
+
     conn.close()
     return items
 
 def get_price_item(item_id):
-    """Get a single price item with history."""
+    """Get a single price item with history and locations."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -277,6 +533,15 @@ def get_price_item(item_id):
         ORDER BY id DESC
     ''', (item_id,))
     item['priceHistory'] = {row['month']: row['price'] for row in cursor.fetchall()}
+
+    # Get locations array
+    cursor.execute('''
+        SELECT l.name FROM locations l
+        JOIN price_item_locations pil ON l.id = pil.location_id
+        WHERE pil.price_item_id = ?
+        ORDER BY l.name
+    ''', (item_id,))
+    item['locations'] = [row['name'] for row in cursor.fetchall()]
 
     conn.close()
     return item
@@ -318,7 +583,7 @@ def update_price(item_id, month, price):
     return get_price_item(item_id)
 
 def add_price_item(data):
-    """Add a new price item."""
+    """Add a new price item with multiple locations."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -329,13 +594,18 @@ def add_price_item(data):
     current_price = data.get('current_price', 0) or 0
     per_unit_cost = round(current_price / units_per_inv, 2)
 
+    # Handle both single location (backward compat) and locations array
+    locations = data.get('locations', [])
+    if not locations and data.get('location'):
+        locations = [data.get('location')]
+
     cursor.execute('''
         INSERT INTO price_items
         (id, location, supplier, item, purchase_unit, units_per_inv, current_price, per_unit_cost, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         item_id,
-        data.get('location', ''),
+        ', '.join(locations) if locations else '',  # Keep location field for display/compat
         data.get('supplier', ''),
         data.get('item', ''),
         data.get('purchase_unit', ''),
@@ -357,30 +627,115 @@ def add_price_item(data):
 
     conn.commit()
     conn.close()
+
+    # Set locations in junction table
+    if locations:
+        set_price_item_locations(item_id, locations)
+
     return get_price_item(item_id)
 
+def update_price_item(item_id, data):
+    """Update all fields of a price item including locations."""
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+
+    units_per_inv = data.get('units_per_inv', 1) or 1
+    current_price = data.get('current_price', 0) or 0
+    per_unit_cost = round(current_price / units_per_inv, 2)
+
+    # Handle both single location (backward compat) and locations array
+    locations = data.get('locations', [])
+    if not locations and data.get('location'):
+        locations = [data.get('location')]
+
+    cursor.execute('''
+        UPDATE price_items
+        SET location = ?, supplier = ?, item = ?, purchase_unit = ?,
+            units_per_inv = ?, current_price = ?, per_unit_cost = ?, updated_at = ?
+        WHERE id = ?
+    ''', (
+        ', '.join(locations) if locations else '',  # Keep location field for display/compat
+        data.get('supplier', ''),
+        data.get('item', ''),
+        data.get('purchase_unit', ''),
+        units_per_inv,
+        current_price,
+        per_unit_cost,
+        now,
+        item_id
+    ))
+
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+
+    # Update locations in junction table
+    if updated:
+        set_price_item_locations(item_id, locations)
+
+    return get_price_item(item_id) if updated else None
+
+def delete_price_item(item_id):
+    """Delete a price item and its location associations."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Delete location associations first (due to foreign key)
+    cursor.execute('DELETE FROM price_item_locations WHERE price_item_id = ?', (item_id,))
+
+    # Delete the price item
+    cursor.execute('DELETE FROM price_items WHERE id = ?', (item_id,))
+    deleted = cursor.rowcount > 0
+
+    conn.commit()
+    conn.close()
+    return deleted
+
 def sync_prices_to_inventory():
-    """Sync per_unit_cost from prices to inventory cost."""
+    """Sync per_unit_cost, supplier, and location from prices to inventory."""
     conn = get_db()
     cursor = conn.cursor()
 
     now = datetime.now().isoformat()
     updated = 0
 
-    cursor.execute('SELECT item, per_unit_cost FROM price_items')
+    # Get price items with their first location (from junction table)
+    cursor.execute('''
+        SELECT p.id, p.item, p.supplier, p.per_unit_cost,
+               (SELECT l.name FROM price_item_locations pil
+                JOIN locations l ON pil.location_id = l.id
+                WHERE pil.price_item_id = p.id
+                ORDER BY l.name LIMIT 1) as location
+        FROM price_items p
+    ''')
     price_items = cursor.fetchall()
 
     for price_item in price_items:
         item_lower = price_item['item'].lower()
         cursor.execute('''
-            SELECT id, cost FROM inventory_items
+            SELECT id, cost, supplier, location FROM inventory_items
             WHERE LOWER(item) LIKE ? OR ? LIKE '%' || LOWER(item) || '%'
         ''', (f'%{item_lower}%', item_lower))
 
         for inv_item in cursor.fetchall():
-            if abs(inv_item['cost'] - price_item['per_unit_cost']) > 0.001:
-                cursor.execute('UPDATE inventory_items SET cost = ?, updated_at = ? WHERE id = ?',
-                             (price_item['per_unit_cost'], now, inv_item['id']))
+            # Check if any field needs updating
+            cost_changed = abs((inv_item['cost'] or 0) - (price_item['per_unit_cost'] or 0)) > 0.001
+            supplier_changed = (inv_item['supplier'] or '') != (price_item['supplier'] or '')
+            location_changed = (inv_item['location'] or '') != (price_item['location'] or '')
+
+            if cost_changed or supplier_changed or location_changed:
+                cursor.execute('''
+                    UPDATE inventory_items
+                    SET cost = ?, supplier = ?, location = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (
+                    price_item['per_unit_cost'],
+                    price_item['supplier'] or '',
+                    price_item['location'] or '',
+                    now,
+                    inv_item['id']
+                ))
                 updated += 1
 
     conn.commit()

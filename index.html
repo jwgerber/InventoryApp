@@ -344,14 +344,15 @@
                     <button class="filter-chip active" data-filter="">All</button>
                     <button class="filter-chip" data-filter="uncounted">Uncounted</button>
                     <button class="filter-chip" data-filter="counted">Counted</button>
-                    <select id="supplier-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
-                        <option value="">All Suppliers</option>
+                    <select id="inventory-location-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
+                        <option value="">All Locations</option>
                     </select>
                 </div>
                 <div class="actions-row">
                     <button class="btn btn-primary" onclick="openAddModal()">+ Add Item</button>
                     <button class="btn btn-warning" onclick="clearAllCounts()">Clear All</button>
                     <button class="btn btn-success" onclick="exportCSV()">Export CSV</button>
+                    <button class="btn" style="background:#95a5a6;color:white;margin-left:auto" onclick="openSettingsModal()">Settings</button>
                 </div>
             </div>
 
@@ -404,12 +405,15 @@
                     <input type="text" id="price-search" placeholder="Search items...">
                 </div>
                 <div class="quick-filters">
-                    <select id="location-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
-                        <option value="">All Locations</option>
+                    <select id="price-supplier-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
+                        <option value="">All Suppliers</option>
                     </select>
                     <button class="btn btn-primary" onclick="openAddPriceModal()">+ Add Price Item</button>
                     <button class="btn btn-primary" onclick="openUpdatePriceModal()">Update Prices</button>
                     <button class="btn btn-success" onclick="syncPricesToInventory()">Sync to Inventory</button>
+                    <button class="btn" style="background:#9b59b6;color:white" onclick="exportPricesCSV()">Export CSV</button>
+                    <button class="btn" style="background:#e67e22;color:white" onclick="document.getElementById('import-file').click()">Import CSV</button>
+                    <input type="file" id="import-file" accept=".csv" style="display:none" onchange="importPricesCSV(this)">
                 </div>
             </div>
 
@@ -455,18 +459,27 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Supplier</label>
-                        <input type="text" id="new-supplier" list="suppliers-list">
-                        <datalist id="suppliers-list"></datalist>
+                        <label>Location</label>
+                        <select id="new-location">
+                            <option value="">-- Select Location --</option>
+                        </select>
                     </div>
+                    <div class="form-group">
+                        <label>Supplier</label>
+                        <select id="new-supplier">
+                            <option value="">-- Select Supplier --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
                     <div class="form-group">
                         <label>Unit *</label>
                         <input type="text" id="new-unit" required placeholder="lb, ea, gal...">
                     </div>
-                </div>
-                <div class="form-group">
-                    <label>Cost per Unit *</label>
-                    <input type="number" id="new-cost" step="0.01" min="0" required>
+                    <div class="form-group">
+                        <label>Cost per Unit *</label>
+                        <input type="number" id="new-cost" step="0.01" min="0" required>
+                    </div>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary" style="flex:1">Add Item</button>
@@ -476,7 +489,61 @@
         </div>
     </div>
 
-    <!-- Update Price Modal -->
+    <!-- Edit Price Item Modal -->
+    <div class="modal" id="edit-price-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Price Item</h2>
+                <button class="close-btn" onclick="closeEditPriceModal()">&times;</button>
+            </div>
+            <form id="edit-price-form" onsubmit="saveEditedPriceItem(event)">
+                <input type="hidden" id="edit-price-id">
+                <div class="form-group">
+                    <label>Item Name *</label>
+                    <input type="text" id="edit-price-item-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Locations (select multiple)</label>
+                    <div id="edit-price-locations" class="location-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:1px solid #ddd;border-radius:6px;max-height:120px;overflow-y:auto;background:#fafafa;">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Supplier</label>
+                    <select id="edit-price-supplier">
+                        <option value="">-- Select Supplier --</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Purchase Unit *</label>
+                        <input type="text" id="edit-price-purchase-unit" required placeholder="case, bag, lb...">
+                    </div>
+                    <div class="form-group">
+                        <label>Units per Inventory *</label>
+                        <input type="number" id="edit-price-units-per-inv" step="0.01" min="0.01" value="1" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Current Price ($)</label>
+                        <input type="number" id="edit-price-current" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Price Month</label>
+                        <select id="edit-price-month"></select>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" style="flex:1">Save Changes</button>
+                    <button type="button" class="btn btn-danger" onclick="deleteEditedPriceItem()">Delete</button>
+                    <button type="button" class="btn" style="background:#eee" onclick="closeEditPriceModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Update Price Modal (quick price update) -->
     <div class="modal" id="update-price-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -531,7 +598,8 @@
             </div>
             <div class="price-history-list" id="price-history-list"></div>
             <div class="form-actions">
-                <button class="btn btn-primary" onclick="editPriceFromHistory()">Update Price</button>
+                <button class="btn btn-primary" onclick="openEditPriceModal(selectedPriceItem.id)">Edit Item</button>
+                <button class="btn btn-success" onclick="editPriceFromHistory()">Update Price</button>
                 <button class="btn" style="background:#eee" onclick="closePriceHistoryModal()">Close</button>
             </div>
         </div>
@@ -549,16 +617,17 @@
                     <label>Item Name *</label>
                     <input type="text" id="new-price-item" required>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Location</label>
-                        <input type="text" id="new-price-location" list="locations-list">
-                        <datalist id="locations-list"></datalist>
+                <div class="form-group">
+                    <label>Locations (select multiple)</label>
+                    <div id="new-price-locations" class="location-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:1px solid #ddd;border-radius:6px;max-height:120px;overflow-y:auto;background:#fafafa;">
+                        <!-- Populated by JS -->
                     </div>
-                    <div class="form-group">
-                        <label>Supplier</label>
-                        <input type="text" id="new-price-supplier">
-                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Supplier</label>
+                    <select id="new-price-supplier">
+                        <option value="">-- Select Supplier --</option>
+                    </select>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -594,6 +663,52 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal" id="settings-modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="close-btn" onclick="closeSettingsModal()">&times;</button>
+            </div>
+            <div style="display: flex; gap: 0; margin-bottom: 15px; border-bottom: 2px solid #eee;">
+                <button class="settings-tab active" onclick="switchSettingsTab('suppliers')" id="suppliers-tab-btn">Suppliers</button>
+                <button class="settings-tab" onclick="switchSettingsTab('locations')" id="locations-tab-btn">Locations</button>
+            </div>
+            <style>
+                .settings-tab { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+                .settings-tab:hover { background: #f8f9fa; }
+                .settings-tab.active { border-bottom-color: #3498db; color: #3498db; }
+                .settings-list { max-height: 250px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; margin-bottom: 15px; }
+                .settings-item { display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid #f0f0f0; gap: 10px; }
+                .settings-item:last-child { border-bottom: none; }
+                .settings-item-name { flex: 1; font-size: 14px; }
+                .settings-item-input { flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+                .settings-item-btn { padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+                .settings-item-btn.edit { background: #3498db; color: white; }
+                .settings-item-btn.delete { background: #e74c3c; color: white; }
+                .settings-item-btn.save { background: #27ae60; color: white; }
+                .settings-item-btn.cancel { background: #95a5a6; color: white; }
+                .settings-add { display: flex; gap: 10px; }
+                .settings-add input { flex: 1; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; }
+                .settings-add input:focus { border-color: #3498db; outline: none; }
+            </style>
+            <div id="suppliers-settings" class="settings-panel">
+                <div class="settings-list" id="suppliers-list-settings"></div>
+                <div class="settings-add">
+                    <input type="text" id="new-supplier-name" placeholder="New supplier name...">
+                    <button class="btn btn-primary" onclick="addNewSupplier()">Add</button>
+                </div>
+            </div>
+            <div id="locations-settings" class="settings-panel" style="display: none;">
+                <div class="settings-list" id="locations-list-settings"></div>
+                <div class="settings-add">
+                    <input type="text" id="new-location-name" placeholder="New location name...">
+                    <button class="btn btn-primary" onclick="addNewLocation()">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="nav-indicator" id="nav-indicator"></div>
 
     <script>
@@ -612,6 +727,8 @@
         // ==================== DATA CACHE ====================
         let inventoryCache = [];
         let priceCache = [];
+        let supplierCache = [];
+        let locationCache = [];
         let selectedMonth = getCurrentMonth();
         let availableMonths = [];
 
@@ -661,10 +778,20 @@
             return priceCache;
         }
 
+        async function loadSuppliers() {
+            supplierCache = await api('/suppliers');
+            return supplierCache;
+        }
+
+        async function loadLocations() {
+            locationCache = await api('/locations');
+            return locationCache;
+        }
+
         // ==================== STATE ====================
         let currentFilter = '';
-        let currentSupplier = '';
-        let currentLocation = '';
+        let currentInventoryLocation = '';
+        let currentPriceSupplier = '';
         let selectedPriceItem = null;
 
         // ==================== TAB SWITCHING ====================
@@ -685,19 +812,38 @@
 
         // ==================== INVENTORY FUNCTIONS ====================
         function getSuppliers() {
-            return [...new Set(inventoryCache.map(i => i.supplier).filter(s => s))].sort();
+            return supplierCache.map(s => s.name).sort();
         }
 
         function populateSuppliers() {
             const suppliers = getSuppliers();
-            const filter = document.getElementById('supplier-filter');
-            const datalist = document.getElementById('suppliers-list');
-            filter.innerHTML = '<option value="">All Suppliers</option>';
-            datalist.innerHTML = '';
-            suppliers.forEach(s => {
-                filter.innerHTML += `<option value="${s}">${s}</option>`;
-                datalist.innerHTML += `<option value="${s}">`;
-            });
+            const priceFilter = document.getElementById('price-supplier-filter');
+            const addItemSelect = document.getElementById('new-supplier');
+            const addPriceSelect = document.getElementById('new-price-supplier');
+
+            // Populate price database filter dropdown
+            if (priceFilter) {
+                priceFilter.innerHTML = '<option value="">All Suppliers</option>';
+                suppliers.forEach(s => {
+                    priceFilter.innerHTML += `<option value="${s}">${s}</option>`;
+                });
+            }
+
+            // Populate Add Item modal dropdown
+            if (addItemSelect) {
+                addItemSelect.innerHTML = '<option value="">-- Select Supplier --</option>';
+                suppliers.forEach(s => {
+                    addItemSelect.innerHTML += `<option value="${s}">${s}</option>`;
+                });
+            }
+
+            // Populate Add Price modal dropdown
+            if (addPriceSelect) {
+                addPriceSelect.innerHTML = '<option value="">-- Select Supplier --</option>';
+                suppliers.forEach(s => {
+                    addPriceSelect.innerHTML += `<option value="${s}">${s}</option>`;
+                });
+            }
         }
 
         function calcTotal(item) {
@@ -718,11 +864,11 @@
                 const matchSearch = !search ||
                     item.item.toLowerCase().includes(search) ||
                     (item.supplier || '').toLowerCase().includes(search);
-                const matchSupplier = !currentSupplier || item.supplier === currentSupplier;
+                const matchLocation = !currentInventoryLocation || item.location === currentInventoryLocation;
                 const total = calcTotal(item);
                 const matchCount = currentFilter === 'counted' ? total > 0 :
                                   currentFilter === 'uncounted' ? total === 0 : true;
-                return matchSearch && matchSupplier && matchCount;
+                return matchSearch && matchLocation && matchCount;
             });
         }
 
@@ -926,16 +1072,44 @@
 
         // ==================== PRICE DATABASE FUNCTIONS ====================
         function getLocations() {
-            return [...new Set(priceCache.map(i => i.location).filter(l => l))].sort();
+            return locationCache.map(l => l.name).sort();
         }
 
         function populateLocations() {
             const locations = getLocations();
-            const filter = document.getElementById('location-filter');
-            filter.innerHTML = '<option value="">All Locations</option>';
-            locations.forEach(l => {
-                filter.innerHTML += `<option value="${l}">${l}</option>`;
-            });
+            const inventoryFilter = document.getElementById('inventory-location-filter');
+            const addItemSelect = document.getElementById('new-location');
+            const checkboxContainer = document.getElementById('new-price-locations');
+
+            // Populate inventory filter dropdown
+            if (inventoryFilter) {
+                inventoryFilter.innerHTML = '<option value="">All Locations</option>';
+                locations.forEach(l => {
+                    inventoryFilter.innerHTML += `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`;
+                });
+            }
+
+            // Populate Add Item modal location dropdown
+            if (addItemSelect) {
+                addItemSelect.innerHTML = '<option value="">-- Select Location --</option>';
+                locations.forEach(l => {
+                    addItemSelect.innerHTML += `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`;
+                });
+            }
+
+            // Populate Add Price modal checkboxes
+            if (checkboxContainer) {
+                if (locations.length === 0) {
+                    checkboxContainer.innerHTML = '<span style="color:#888;font-size:13px;">No locations. Add some in Settings.</span>';
+                } else {
+                    checkboxContainer.innerHTML = locations.map(l => `
+                        <label style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:white;border:1px solid #ddd;border-radius:15px;cursor:pointer;font-size:13px;">
+                            <input type="checkbox" value="${escapeHtml(l)}" style="margin:0;">
+                            ${escapeHtml(l)}
+                        </label>
+                    `).join('');
+                }
+            }
         }
 
         function getCurrentMonthDisplay() {
@@ -950,8 +1124,8 @@
                 const matchSearch = !search ||
                     item.item.toLowerCase().includes(search) ||
                     (item.supplier && item.supplier.toLowerCase().includes(search));
-                const matchLocation = !currentLocation || item.location === currentLocation;
-                return matchSearch && matchLocation;
+                const matchSupplier = !currentPriceSupplier || item.supplier === currentPriceSupplier;
+                return matchSearch && matchSupplier;
             });
         }
 
@@ -972,10 +1146,15 @@
                 const tr = document.createElement('tr');
                 tr.style.cursor = 'pointer';
                 tr.onclick = () => showPriceHistory(item.id);
+                // Display locations as small tags
+                const locationsHtml = (item.locations || []).length > 0
+                    ? item.locations.map(l => `<span style="background:#e8f4f8;color:#2980b9;padding:1px 6px;border-radius:10px;font-size:10px;margin-right:3px;">${escapeHtml(l)}</span>`).join('')
+                    : '';
+
                 tr.innerHTML = `
                     <td>
                         <div class="item-name">${escapeHtml(item.item)}</div>
-                        <div class="item-details">${escapeHtml(item.location || '')} ${item.supplier ? '· ' + escapeHtml(item.supplier) : ''}</div>
+                        <div class="item-details">${locationsHtml} ${item.supplier ? (locationsHtml ? '· ' : '') + escapeHtml(item.supplier) : ''}</div>
                     </td>
                     <td>${escapeHtml(item.purchase_unit || '')}</td>
                     <td>${item.units_per_inv || 1}</td>
@@ -1131,10 +1310,213 @@
             }
         }
 
+        function exportPricesCSV() {
+            window.location.href = '/api/export/prices';
+        }
+
+        async function importPricesCSV(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/import/prices', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await res.json();
+
+                if (!res.ok) {
+                    alert(`Import failed: ${result.error}`);
+                    return;
+                }
+
+                let message = `Import complete!\n\nUpdated: ${result.updated}\nCreated: ${result.created}`;
+                if (result.errors && result.errors.length > 0) {
+                    message += `\n\nErrors (${result.errors.length}):\n${result.errors.slice(0, 5).join('\n')}`;
+                    if (result.errors.length > 5) {
+                        message += `\n... and ${result.errors.length - 5} more`;
+                    }
+                }
+
+                alert(message);
+                await loadPrices();
+                renderPriceTable();
+            } catch (err) {
+                alert('Import failed: ' + err.message);
+            } finally {
+                input.value = ''; // Reset file input
+            }
+        }
+
+        // ==================== SETTINGS MODAL ====================
+        function openSettingsModal() {
+            document.getElementById('settings-modal').classList.add('active');
+            renderSettingsSuppliers();
+            renderSettingsLocations();
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        function switchSettingsTab(tab) {
+            document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(`${tab}-tab-btn`).classList.add('active');
+
+            document.getElementById('suppliers-settings').style.display = tab === 'suppliers' ? 'block' : 'none';
+            document.getElementById('locations-settings').style.display = tab === 'locations' ? 'block' : 'none';
+        }
+
+        function renderSettingsSuppliers() {
+            const list = document.getElementById('suppliers-list-settings');
+            if (supplierCache.length === 0) {
+                list.innerHTML = '<div class="settings-item" style="color:#888;justify-content:center;">No suppliers yet</div>';
+                return;
+            }
+            list.innerHTML = supplierCache.map(s => `
+                <div class="settings-item" id="supplier-item-${s.id}">
+                    <span class="settings-item-name">${escapeHtml(s.name)}</span>
+                    <button class="settings-item-btn edit" onclick="editSupplier(${s.id}, '${escapeHtml(s.name)}')">Edit</button>
+                    <button class="settings-item-btn delete" onclick="deleteSupplier(${s.id})">Delete</button>
+                </div>
+            `).join('');
+        }
+
+        function renderSettingsLocations() {
+            const list = document.getElementById('locations-list-settings');
+            if (locationCache.length === 0) {
+                list.innerHTML = '<div class="settings-item" style="color:#888;justify-content:center;">No locations yet</div>';
+                return;
+            }
+            list.innerHTML = locationCache.map(l => `
+                <div class="settings-item" id="location-item-${l.id}">
+                    <span class="settings-item-name">${escapeHtml(l.name)}</span>
+                    <button class="settings-item-btn edit" onclick="editLocation(${l.id}, '${escapeHtml(l.name)}')">Edit</button>
+                    <button class="settings-item-btn delete" onclick="deleteLocation(${l.id})">Delete</button>
+                </div>
+            `).join('');
+        }
+
+        async function addNewSupplier() {
+            const input = document.getElementById('new-supplier-name');
+            const name = input.value.trim();
+            if (!name) return;
+
+            try {
+                await api('/suppliers', { method: 'POST', body: JSON.stringify({ name }) });
+                input.value = '';
+                await loadSuppliers();
+                renderSettingsSuppliers();
+                populateSuppliers();
+                showNavHint('Supplier added!');
+            } catch (err) {
+                alert('Failed to add supplier. It may already exist.');
+            }
+        }
+
+        function editSupplier(id, currentName) {
+            const item = document.getElementById(`supplier-item-${id}`);
+            item.innerHTML = `
+                <input type="text" class="settings-item-input" id="edit-supplier-${id}" value="${escapeHtml(currentName)}">
+                <button class="settings-item-btn save" onclick="saveSupplier(${id})">Save</button>
+                <button class="settings-item-btn cancel" onclick="renderSettingsSuppliers()">Cancel</button>
+            `;
+            document.getElementById(`edit-supplier-${id}`).focus();
+        }
+
+        async function saveSupplier(id) {
+            const input = document.getElementById(`edit-supplier-${id}`);
+            const name = input.value.trim();
+            if (!name) return;
+
+            try {
+                await api(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify({ name }) });
+                await loadSuppliers();
+                renderSettingsSuppliers();
+                populateSuppliers();
+                showNavHint('Supplier updated!');
+            } catch (err) {
+                alert('Failed to update supplier. Name may already exist.');
+            }
+        }
+
+        async function deleteSupplier(id) {
+            if (!confirm('Delete this supplier?')) return;
+
+            try {
+                await api(`/suppliers/${id}`, { method: 'DELETE' });
+                await loadSuppliers();
+                renderSettingsSuppliers();
+                populateSuppliers();
+                showNavHint('Supplier deleted!');
+            } catch (err) {
+                alert('Failed to delete supplier');
+            }
+        }
+
+        async function addNewLocation() {
+            const input = document.getElementById('new-location-name');
+            const name = input.value.trim();
+            if (!name) return;
+
+            try {
+                await api('/locations', { method: 'POST', body: JSON.stringify({ name }) });
+                input.value = '';
+                await loadLocations();
+                renderSettingsLocations();
+                populateLocations();
+                showNavHint('Location added!');
+            } catch (err) {
+                alert('Failed to add location. It may already exist.');
+            }
+        }
+
+        function editLocation(id, currentName) {
+            const item = document.getElementById(`location-item-${id}`);
+            item.innerHTML = `
+                <input type="text" class="settings-item-input" id="edit-location-${id}" value="${escapeHtml(currentName)}">
+                <button class="settings-item-btn save" onclick="saveLocation(${id})">Save</button>
+                <button class="settings-item-btn cancel" onclick="renderSettingsLocations()">Cancel</button>
+            `;
+            document.getElementById(`edit-location-${id}`).focus();
+        }
+
+        async function saveLocation(id) {
+            const input = document.getElementById(`edit-location-${id}`);
+            const name = input.value.trim();
+            if (!name) return;
+
+            try {
+                await api(`/locations/${id}`, { method: 'PUT', body: JSON.stringify({ name }) });
+                await loadLocations();
+                renderSettingsLocations();
+                populateLocations();
+                showNavHint('Location updated!');
+            } catch (err) {
+                alert('Failed to update location. Name may already exist.');
+            }
+        }
+
+        async function deleteLocation(id) {
+            if (!confirm('Delete this location?')) return;
+
+            try {
+                await api(`/locations/${id}`, { method: 'DELETE' });
+                await loadLocations();
+                renderSettingsLocations();
+                populateLocations();
+                showNavHint('Location deleted!');
+            } catch (err) {
+                alert('Failed to delete location');
+            }
+        }
+
         // ==================== ADD PRICE ITEM MODAL ====================
         function openAddPriceModal() {
             document.getElementById('add-price-modal').classList.add('active');
-            populateLocationsList();
             populateNewPriceMonthSelect();
             document.getElementById('new-price-item').focus();
         }
@@ -1143,12 +1525,6 @@
             document.getElementById('add-price-modal').classList.remove('active');
             document.getElementById('add-price-form').reset();
             document.getElementById('create-inventory-item').checked = true;
-        }
-
-        function populateLocationsList() {
-            const locations = getLocations();
-            const datalist = document.getElementById('locations-list');
-            datalist.innerHTML = locations.map(l => `<option value="${escapeHtml(l)}">`).join('');
         }
 
         function populateNewPriceMonthSelect() {
@@ -1168,7 +1544,9 @@
             e.preventDefault();
 
             const itemName = document.getElementById('new-price-item').value.trim();
-            const location = document.getElementById('new-price-location').value.trim();
+            // Get all checked location checkboxes
+            const locationCheckboxes = document.querySelectorAll('#new-price-locations input[type="checkbox"]:checked');
+            const locations = Array.from(locationCheckboxes).map(cb => cb.value);
             const supplier = document.getElementById('new-price-supplier').value.trim();
             const purchaseUnit = document.getElementById('new-price-purchase-unit').value.trim();
             const unitsPerInv = parseFloat(document.getElementById('new-price-units-per-inv').value) || 1;
@@ -1178,7 +1556,7 @@
 
             const priceData = {
                 item: itemName,
-                location: location,
+                locations: locations,
                 supplier: supplier,
                 purchase_unit: purchaseUnit,
                 units_per_inv: unitsPerInv,
@@ -1219,6 +1597,120 @@
             }
         }
 
+        // ==================== EDIT PRICE ITEM MODAL ====================
+        function openEditPriceModal(id) {
+            const item = priceCache.find(i => i.id === id);
+            if (!item) return;
+
+            closePriceHistoryModal();
+            document.getElementById('edit-price-modal').classList.add('active');
+
+            // Populate form fields
+            document.getElementById('edit-price-id').value = item.id;
+            document.getElementById('edit-price-item-name').value = item.item || '';
+            document.getElementById('edit-price-purchase-unit').value = item.purchase_unit || '';
+            document.getElementById('edit-price-units-per-inv').value = item.units_per_inv || 1;
+            document.getElementById('edit-price-current').value = item.current_price || '';
+
+            // Populate supplier dropdown
+            const supplierSelect = document.getElementById('edit-price-supplier');
+            const suppliers = getSuppliers();
+            supplierSelect.innerHTML = '<option value="">-- Select Supplier --</option>';
+            suppliers.forEach(s => {
+                const selected = s === item.supplier ? 'selected' : '';
+                supplierSelect.innerHTML += `<option value="${escapeHtml(s)}" ${selected}>${escapeHtml(s)}</option>`;
+            });
+
+            // Populate location checkboxes
+            const locations = getLocations();
+            const itemLocations = item.locations || [];
+            const container = document.getElementById('edit-price-locations');
+            if (locations.length === 0) {
+                container.innerHTML = '<span style="color:#888;font-size:13px;">No locations. Add some in Settings.</span>';
+            } else {
+                container.innerHTML = locations.map(l => {
+                    const checked = itemLocations.includes(l) ? 'checked' : '';
+                    return `
+                        <label style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:white;border:1px solid #ddd;border-radius:15px;cursor:pointer;font-size:13px;">
+                            <input type="checkbox" value="${escapeHtml(l)}" ${checked} style="margin:0;">
+                            ${escapeHtml(l)}
+                        </label>
+                    `;
+                }).join('');
+            }
+
+            // Populate month selector
+            const monthSelect = document.getElementById('edit-price-month');
+            const now = new Date();
+            monthSelect.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+                const label = `${monthName}'${String(d.getFullYear()).slice(2)}`;
+                monthSelect.innerHTML += `<option value="${label}" ${i === 0 ? 'selected' : ''}>${label}</option>`;
+            }
+
+            document.getElementById('edit-price-item-name').focus();
+        }
+
+        function closeEditPriceModal() {
+            document.getElementById('edit-price-modal').classList.remove('active');
+        }
+
+        async function saveEditedPriceItem(e) {
+            e.preventDefault();
+
+            const id = document.getElementById('edit-price-id').value;
+            const itemName = document.getElementById('edit-price-item-name').value.trim();
+            const locationCheckboxes = document.querySelectorAll('#edit-price-locations input[type="checkbox"]:checked');
+            const locations = Array.from(locationCheckboxes).map(cb => cb.value);
+            const supplier = document.getElementById('edit-price-supplier').value.trim();
+            const purchaseUnit = document.getElementById('edit-price-purchase-unit').value.trim();
+            const unitsPerInv = parseFloat(document.getElementById('edit-price-units-per-inv').value) || 1;
+            const currentPrice = parseFloat(document.getElementById('edit-price-current').value) || 0;
+            const month = document.getElementById('edit-price-month').value;
+
+            try {
+                await api(`/prices/${id}/edit`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        item: itemName,
+                        locations: locations,
+                        supplier: supplier,
+                        purchase_unit: purchaseUnit,
+                        units_per_inv: unitsPerInv,
+                        current_price: currentPrice,
+                        month: month
+                    })
+                });
+
+                await loadPrices();
+                closeEditPriceModal();
+                renderPriceTable();
+                showNavHint('Item updated!');
+            } catch (err) {
+                alert('Failed to update item');
+                console.error(err);
+            }
+        }
+
+        async function deleteEditedPriceItem() {
+            const id = document.getElementById('edit-price-id').value;
+            const item = priceCache.find(i => i.id === id);
+            if (!confirm(`Delete "${item?.item || 'this item'}"? This cannot be undone.`)) return;
+
+            try {
+                await api(`/prices/${id}`, { method: 'DELETE' });
+                await loadPrices();
+                closeEditPriceModal();
+                renderPriceTable();
+                showNavHint('Item deleted!');
+            } catch (err) {
+                alert('Failed to delete item');
+                console.error(err);
+            }
+        }
+
         // ==================== ADD ITEM MODAL ====================
         function openAddModal() {
             document.getElementById('add-modal').classList.add('active');
@@ -1233,6 +1725,7 @@
         async function addNewItem(e) {
             e.preventDefault();
             const newItem = {
+                location: document.getElementById('new-location').value.trim(),
                 supplier: document.getElementById('new-supplier').value.trim(),
                 item: document.getElementById('new-item').value.trim(),
                 unit: document.getElementById('new-unit').value.trim(),
@@ -1285,14 +1778,14 @@
             });
         });
 
-        document.getElementById('supplier-filter').addEventListener('change', (e) => {
-            currentSupplier = e.target.value;
+        document.getElementById('inventory-location-filter').addEventListener('change', (e) => {
+            currentInventoryLocation = e.target.value;
             renderTable();
         });
 
         document.getElementById('price-search').addEventListener('input', renderPriceTable);
-        document.getElementById('location-filter').addEventListener('change', (e) => {
-            currentLocation = e.target.value;
+        document.getElementById('price-supplier-filter').addEventListener('change', (e) => {
+            currentPriceSupplier = e.target.value;
             renderPriceTable();
         });
 
@@ -1316,7 +1809,7 @@
         async function init() {
             try {
                 await loadInventoryMonths();
-                await Promise.all([loadInventory(), loadPrices()]);
+                await Promise.all([loadInventory(), loadPrices(), loadSuppliers(), loadLocations()]);
                 populateSuppliers();
                 populateLocations();
                 renderTable();
