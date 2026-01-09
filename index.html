@@ -505,6 +505,10 @@
                     <select id="price-supplier-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
                         <option value="">All Suppliers</option>
                     </select>
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; padding: 6px 10px; border: 1px solid #ddd; border-radius: 20px;">
+                        <input type="checkbox" id="show-archived" onchange="toggleShowArchived()">
+                        Show Archived
+                    </label>
                     <button class="btn btn-primary" onclick="openAddPriceModal()">+ Add Item</button>
                     <button class="btn btn-primary" onclick="openUpdatePriceModal()">Update Prices</button>
                     <button class="btn btn-success" onclick="syncPricesToInventory()">Sync to Inventory</button>
@@ -639,6 +643,7 @@
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary" style="flex:1">Save Changes</button>
+                    <button type="button" class="btn" style="background:#95a5a6;color:white" onclick="archiveEditedPriceItem()" id="archive-btn">Archive</button>
                     <button type="button" class="btn btn-danger" onclick="deleteEditedPriceItem()">Delete</button>
                     <button type="button" class="btn" style="background:#eee" onclick="closeEditPriceModal()">Cancel</button>
                 </div>
@@ -898,7 +903,8 @@
         }
 
         async function loadPrices() {
-            priceCache = await api('/prices');
+            const url = showArchived ? '/prices?include_archived=true' : '/prices';
+            priceCache = await api(url);
             return priceCache;
         }
 
@@ -921,6 +927,7 @@
         let currentFilter = '';
         let currentCountStore = '';  // Store for inventory counting (Inman, Central, etc.)
         let currentPriceSupplier = '';
+        let showArchived = false;
         let selectedPriceItem = null;
 
         // ==================== TAB SWITCHING ====================
@@ -1278,7 +1285,7 @@
             tbody.innerHTML = '';
 
             document.getElementById('current-month').textContent = getCurrentMonthDisplay();
-            document.getElementById('price-item-count').textContent = priceCache.length;
+            document.getElementById('price-item-count').textContent = priceCache.filter(i => !i.archived).length;
 
             filtered.forEach((item, idx) => {
                 const history = Object.entries(item.priceHistory || {}).slice(0, 6);
@@ -1288,16 +1295,21 @@
 
                 const tr = document.createElement('tr');
                 tr.style.cursor = 'pointer';
+                if (item.archived) {
+                    tr.style.opacity = '0.5';
+                    tr.style.background = '#f5f5f5';
+                }
                 tr.onclick = () => showPriceHistory(item.id);
                 // Display locations as small tags
                 const locationsHtml = (item.locations || []).length > 0
                     ? item.locations.map(l => `<span style="background:#e8f4f8;color:#2980b9;padding:1px 6px;border-radius:10px;font-size:10px;margin-right:3px;">${escapeHtml(l)}</span>`).join('')
                     : '';
+                const archivedBadge = item.archived ? '<span style="background:#95a5a6;color:white;padding:1px 6px;border-radius:10px;font-size:10px;margin-right:3px;">ARCHIVED</span>' : '';
 
                 tr.innerHTML = `
                     <td>
                         <div class="item-name">${escapeHtml(item.item)}</div>
-                        <div class="item-details">${locationsHtml} ${item.supplier ? (locationsHtml ? '· ' : '') + escapeHtml(item.supplier) : ''}</div>
+                        <div class="item-details">${archivedBadge}${locationsHtml} ${item.supplier ? (locationsHtml || archivedBadge ? '· ' : '') + escapeHtml(item.supplier) : ''}</div>
                     </td>
                     <td>${escapeHtml(item.purchase_unit || '')}</td>
                     <td>${item.units_per_inv || 1}</td>
@@ -1841,6 +1853,16 @@
             document.getElementById('edit-price-units-per-inv').value = item.units_per_inv || 1;
             document.getElementById('edit-price-current').value = item.current_price || '';
 
+            // Update archive button text based on item state
+            const archiveBtn = document.getElementById('archive-btn');
+            if (item.archived) {
+                archiveBtn.textContent = 'Unarchive';
+                archiveBtn.style.background = '#27ae60';
+            } else {
+                archiveBtn.textContent = 'Archive';
+                archiveBtn.style.background = '#95a5a6';
+            }
+
             // Populate supplier dropdown
             const supplierSelect = document.getElementById('edit-price-supplier');
             const suppliers = getSuppliers();
@@ -1989,6 +2011,38 @@
                 alert('Failed to delete item');
                 console.error(err);
             }
+        }
+
+        async function archiveEditedPriceItem() {
+            const id = document.getElementById('edit-price-id').value;
+            const item = priceCache.find(i => i.id === id);
+            if (!item) return;
+
+            const isArchived = item.archived;
+            const action = isArchived ? 'unarchive' : 'archive';
+
+            if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} "${item.item}"? ${isArchived ? '' : 'This will also archive the matching inventory item.'}`)) return;
+
+            try {
+                await api(`/prices/${id}/archive`, {
+                    method: 'POST',
+                    body: JSON.stringify({ archive: !isArchived })
+                });
+                await loadPrices();
+                await loadInventory();
+                closeEditPriceModal();
+                renderPriceTable();
+                showNavHint(`Item ${action}d!`);
+            } catch (err) {
+                alert(`Failed to ${action} item`);
+                console.error(err);
+            }
+        }
+
+        async function toggleShowArchived() {
+            showArchived = document.getElementById('show-archived').checked;
+            await loadPrices();
+            renderPriceTable();
         }
 
         // ==================== ADD ITEM MODAL ====================

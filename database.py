@@ -135,6 +135,8 @@ def init_db():
     migrate_inventory_counts_store()
     # Add cost column to inventory_counts for historical price tracking
     migrate_inventory_counts_cost()
+    # Add archived column to price_items and inventory_items
+    migrate_archived_column()
 
 def migrate_suppliers_locations():
     """Extract existing suppliers/locations from items and add to new tables."""
@@ -277,6 +279,26 @@ def migrate_inventory_counts_cost():
 
         conn.commit()
 
+    conn.close()
+
+def migrate_archived_column():
+    """Add archived column to price_items and inventory_items."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Check and add archived column to price_items
+    cursor.execute("PRAGMA table_info(price_items)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'archived' not in columns:
+        cursor.execute('ALTER TABLE price_items ADD COLUMN archived INTEGER DEFAULT 0')
+
+    # Check and add archived column to inventory_items
+    cursor.execute("PRAGMA table_info(inventory_items)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'archived' not in columns:
+        cursor.execute('ALTER TABLE inventory_items ADD COLUMN archived INTEGER DEFAULT 0')
+
+    conn.commit()
     conn.close()
 
 # ==================== SUPPLIER FUNCTIONS ====================
@@ -476,7 +498,7 @@ def set_price_item_locations(price_item_id, location_names):
 
 # ==================== INVENTORY FUNCTIONS ====================
 
-def get_all_inventory(month=None, store=None):
+def get_all_inventory(month=None, store=None, include_archived=False):
     """Get all inventory items with counts for specified month and store."""
     conn = get_db()
     cursor = conn.cursor()
@@ -492,12 +514,14 @@ def get_all_inventory(month=None, store=None):
         join_params.append(store)
 
     join_clause = " AND ".join(join_conditions) if join_conditions else "1=1"
+    archived_clause = "" if include_archived else "WHERE COALESCE(i.archived, 0) = 0"
 
     query = f'''
         SELECT i.id, i.supplier, i.location, i.item, i.unit,
                COALESCE(c.cost, i.cost) as cost,
                i.cost as current_cost,
                i.is_custom,
+               COALESCE(i.archived, 0) as archived,
                i.created_at, i.updated_at,
                COALESCE(c.count1, 0) as count1,
                COALESCE(c.count2, 0) as count2,
@@ -505,6 +529,7 @@ def get_all_inventory(month=None, store=None):
                COALESCE(c.count4, 0) as count4
         FROM inventory_items i
         LEFT JOIN inventory_counts c ON i.id = c.inventory_item_id AND {join_clause}
+        {archived_clause}
         ORDER BY i.item
     '''
 
@@ -674,13 +699,16 @@ def clear_all_counts(month=None, store=None):
 
 # ==================== PRICE FUNCTIONS ====================
 
-def get_all_prices():
+def get_all_prices(include_archived=False):
     """Get all price items with their history and locations."""
     conn = get_db()
     cursor = conn.cursor()
 
     # Get all price items
-    cursor.execute('SELECT * FROM price_items ORDER BY item')
+    if include_archived:
+        cursor.execute('SELECT * FROM price_items ORDER BY item')
+    else:
+        cursor.execute('SELECT * FROM price_items WHERE COALESCE(archived, 0) = 0 ORDER BY item')
     items = [dict(row) for row in cursor.fetchall()]
 
     # Get history and locations for each item
@@ -880,6 +908,50 @@ def delete_price_item(item_id):
     conn.commit()
     conn.close()
     return deleted
+
+def archive_price_item(item_id, archive=True):
+    """Archive or unarchive a price item and matching inventory items."""
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    archived_val = 1 if archive else 0
+
+    # Get the price item name first
+    cursor.execute('SELECT item FROM price_items WHERE id = ?', (item_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+
+    item_name = row['item']
+
+    # Archive the price item
+    cursor.execute('UPDATE price_items SET archived = ?, updated_at = ? WHERE id = ?',
+                   (archived_val, now, item_id))
+
+    # Archive matching inventory items (exact name match)
+    cursor.execute('UPDATE inventory_items SET archived = ?, updated_at = ? WHERE LOWER(item) = LOWER(?)',
+                   (archived_val, now, item_name))
+    inventory_updated = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+    return {'price_item': item_id, 'inventory_items_updated': inventory_updated}
+
+def archive_inventory_item(item_id, archive=True):
+    """Archive or unarchive an inventory item."""
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    archived_val = 1 if archive else 0
+
+    cursor.execute('UPDATE inventory_items SET archived = ?, updated_at = ? WHERE id = ?',
+                   (archived_val, now, item_id))
+    updated = cursor.rowcount > 0
+
+    conn.commit()
+    conn.close()
+    return updated
 
 def sync_prices_to_inventory():
     """Sync per_unit_cost, supplier, and location from prices to inventory."""

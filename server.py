@@ -32,7 +32,8 @@ def get_inventory():
     """Get all inventory items with counts for specified month and store."""
     month = request.args.get('month')
     store = request.args.get('store')
-    items = db.get_all_inventory(month, store)
+    include_archived = request.args.get('include_archived', '').lower() == 'true'
+    items = db.get_all_inventory(month, store, include_archived)
     return jsonify(items)
 
 @app.route('/api/inventory/<item_id>', methods=['GET'])
@@ -82,7 +83,8 @@ def clear_counts():
 @app.route('/api/prices', methods=['GET'])
 def get_prices():
     """Get all price items with history."""
-    items = db.get_all_prices()
+    include_archived = request.args.get('include_archived', '').lower() == 'true'
+    items = db.get_all_prices(include_archived)
     return jsonify(items)
 
 @app.route('/api/prices/<item_id>', methods=['GET'])
@@ -140,6 +142,16 @@ def delete_price_item(item_id):
     """Delete a price item."""
     if db.delete_price_item(item_id):
         return jsonify({'success': True})
+    return jsonify({'error': 'Item not found'}), 404
+
+@app.route('/api/prices/<item_id>/archive', methods=['POST'])
+def archive_price_item(item_id):
+    """Archive a price item and matching inventory items."""
+    data = request.get_json() or {}
+    archive = data.get('archive', True)
+    result = db.archive_price_item(item_id, archive)
+    if result:
+        return jsonify(result)
     return jsonify({'error': 'Item not found'}), 404
 
 @app.route('/api/prices/sync', methods=['POST'])
