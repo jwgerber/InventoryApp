@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Cost Database</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            font-size: 14px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 10px; }
+
+        /* Tab navigation */
+        .tab-nav { display: flex; gap: 0; margin-bottom: 10px; }
+        .tab-btn {
+            padding: 12px 24px;
+            border: none;
+            background: #ddd;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border-radius: 8px 8px 0 0;
+        }
+        .tab-btn:hover { background: #ccc; }
+        .tab-btn.active { background: #2c3e50; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            border-radius: 0 8px 8px 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 { font-size: 1.1rem; }
+        .header-stats { display: flex; gap: 20px; font-size: 0.85rem; }
+        .stat { text-align: center; }
+        .stat-value { font-size: 1.1rem; font-weight: bold; }
+        .grand-total { color: #2ecc71; }
+
+        /* Search section */
+        .search-section {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .search-container { display: flex; gap: 10px; align-items: center; }
+        #search, #price-search {
+            flex: 1;
+            padding: 14px 18px;
+            border: 3px solid #3498db;
+            border-radius: 8px;
+            font-size: 18px;
+            outline: none;
+        }
+        #search:focus, #price-search:focus {
+            border-color: #2980b9;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+        }
+        .search-hint { font-size: 12px; color: #888; margin-top: 8px; }
+        .search-hint kbd {
+            background: #eee; padding: 2px 6px; border-radius: 3px;
+            font-family: monospace; border: 1px solid #ddd;
+        }
+
+        /* Filters */
+        .quick-filters { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+        .filter-chip {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+        }
+        .filter-chip:hover { background: #f0f0f0; }
+        .filter-chip.active { background: #3498db; color: white; border-color: #3498db; }
+
+        /* Buttons */
+        .actions-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-warning { background: #f39c12; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        /* Table */
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .table-scroll {
+            overflow-x: auto;
+            max-height: calc(100vh - 340px);
+            overflow-y: auto;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th {
+            background: #f8f9fa;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+        tr:hover { background: #f8f9fa; }
+        tr.highlighted { background: #fff3cd !important; }
+        tr.just-entered { background: #d4edda !important; transition: background 0.3s; }
+
+        .item-name { font-weight: 500; font-size: 14px; }
+        .item-details { font-size: 11px; color: #888; }
+
+        .count-input {
+            width: 65px;
+            padding: 10px 6px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+        .count-input:focus {
+            border-color: #3498db;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+            outline: none;
+        }
+        .count-input.has-value { background: #e8f5e9; border-color: #81c784; }
+        .count-input::-webkit-inner-spin-button { opacity: 1; height: 30px; }
+
+        .total-cell { font-weight: 600; color: #2980b9; font-size: 14px; }
+        .extended-cell { font-weight: 600; color: #27ae60; font-size: 14px; }
+
+        .footer {
+            background: white;
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .footer-total { font-size: 1.3rem; font-weight: bold; color: #27ae60; }
+
+        .price-cell { font-family: monospace; font-size: 13px; }
+        .price-change { font-size: 11px; margin-left: 4px; }
+        .price-up { color: #e74c3c; }
+        .price-down { color: #27ae60; }
+        .price-same { color: #888; }
+        .unit-cost {
+            background: #e8f5e9;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            color: #27ae60;
+        }
+
+        .mini-chart { display: flex; align-items: flex-end; gap: 1px; height: 30px; }
+        .chart-bar {
+            width: 4px;
+            background: #3498db;
+            border-radius: 1px 1px 0 0;
+            min-height: 2px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-header h2 { font-size: 1.1rem; }
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #888;
+        }
+        .form-group { margin-bottom: 12px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 500;
+            font-size: 13px;
+            color: #555;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        .form-row { display: flex; gap: 15px; }
+        .form-row .form-group { flex: 1; }
+        .form-actions { display: flex; gap: 10px; margin-top: 20px; }
+
+        .price-history-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        .price-history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        .price-history-item:last-child { border-bottom: none; }
+
+        .nav-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        .nav-indicator.visible { opacity: 0.9; }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .db-badge {
+            background: #27ae60;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            margin-left: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .count-input { width: 55px; padding: 12px 4px; }
+            #search, #price-search { font-size: 16px; padding: 12px; }
+            .header-stats { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tab-nav">
+            <button class="tab-btn active" onclick="switchTab('inventory')">Inventory</button>
+            <button class="tab-btn" onclick="switchTab('prices')">Price Database</button>
+        </div>
+
+        <!-- INVENTORY TAB -->
+        <div id="inventory-tab" class="tab-content active">
+            <header>
+                <h1>Inventory Count <span class="db-badge">SQLite</span></h1>
+                <div class="header-stats">
+                    <div class="stat">
+                        <div class="stat-value" id="items-counted">0</div>
+                        <div>Counted</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value grand-total" id="grand-total">$0.00</div>
+                        <div>Total</div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="search-section">
+                <div class="search-container">
+                    <input type="text" id="search" placeholder="Type to search, Enter to jump to count..." autofocus>
+                    <select id="month-selector" style="padding: 14px 18px; border: 3px solid #27ae60; border-radius: 8px; font-size: 16px; font-weight: 600; background: white; cursor: pointer;" onchange="changeMonth(this.value)">
+                    </select>
+                </div>
+                <div class="search-hint">
+                    <kbd>Enter</kbd> jump to first result
+                    <kbd>Tab</kbd> next field
+                    <kbd>↓</kbd> next row
+                    <kbd>Esc</kbd> back to search
+                </div>
+                <div class="quick-filters">
+                    <button class="filter-chip active" data-filter="">All</button>
+                    <button class="filter-chip" data-filter="uncounted">Uncounted</button>
+                    <button class="filter-chip" data-filter="counted">Counted</button>
+                    <select id="supplier-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
+                        <option value="">All Suppliers</option>
+                    </select>
+                </div>
+                <div class="actions-row">
+                    <button class="btn btn-primary" onclick="openAddModal()">+ Add Item</button>
+                    <button class="btn btn-warning" onclick="clearAllCounts()">Clear All</button>
+                    <button class="btn btn-success" onclick="exportCSV()">Export CSV</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="table-scroll" id="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 35%">Item</th>
+                                <th style="width: 10%">Cost</th>
+                                <th style="width: 10%">1</th>
+                                <th style="width: 10%">2</th>
+                                <th style="width: 10%">3</th>
+                                <th style="width: 10%">4</th>
+                                <th style="width: 7%">Qty</th>
+                                <th style="width: 10%">Ext.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-table">
+                            <tr><td colspan="8" class="loading">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="footer">
+                <span id="showing-count">0 items</span>
+                <span class="footer-total" id="footer-total">$0.00</span>
+            </div>
+        </div>
+
+        <!-- PRICE DATABASE TAB -->
+        <div id="prices-tab" class="tab-content">
+            <header>
+                <h1>Price Database <span class="db-badge">SQLite</span></h1>
+                <div class="header-stats">
+                    <div class="stat">
+                        <div class="stat-value" id="price-item-count">0</div>
+                        <div>Items</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="current-month">-</div>
+                        <div>Current</div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="search-section">
+                <div class="search-container">
+                    <input type="text" id="price-search" placeholder="Search items...">
+                </div>
+                <div class="quick-filters">
+                    <select id="location-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
+                        <option value="">All Locations</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="openUpdatePriceModal()">Update Prices</button>
+                    <button class="btn btn-success" onclick="syncPricesToInventory()">Sync to Inventory</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="table-scroll" id="price-table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 25%">Item</th>
+                                <th style="width: 12%">Purchase Unit</th>
+                                <th style="width: 8%">Units/Inv</th>
+                                <th style="width: 12%">Current Price</th>
+                                <th style="width: 12%">Per Unit Cost</th>
+                                <th style="width: 15%">Trend (6mo)</th>
+                                <th style="width: 8%">Change</th>
+                            </tr>
+                        </thead>
+                        <tbody id="price-table">
+                            <tr><td colspan="7" class="loading">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="footer">
+                <span id="price-showing-count">0 items</span>
+                <span style="color: #888;">Click any row to see full price history</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Inventory Item Modal -->
+    <div class="modal" id="add-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Item</h2>
+                <button class="close-btn" onclick="closeAddModal()">&times;</button>
+            </div>
+            <form id="add-form" onsubmit="addNewItem(event)">
+                <div class="form-group">
+                    <label>Item Name *</label>
+                    <input type="text" id="new-item" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Supplier</label>
+                        <input type="text" id="new-supplier" list="suppliers-list">
+                        <datalist id="suppliers-list"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label>Unit *</label>
+                        <input type="text" id="new-unit" required placeholder="lb, ea, gal...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Cost per Unit *</label>
+                    <input type="number" id="new-cost" step="0.01" min="0" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" style="flex:1">Add Item</button>
+                    <button type="button" class="btn" style="background:#eee" onclick="closeAddModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Update Price Modal -->
+    <div class="modal" id="update-price-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Update Price</h2>
+                <button class="close-btn" onclick="closeUpdatePriceModal()">&times;</button>
+            </div>
+            <form id="update-price-form" onsubmit="saveNewPrice(event)">
+                <div class="form-group">
+                    <label>Select Item</label>
+                    <input type="text" id="price-item-search" placeholder="Type to search..." list="price-items-list">
+                    <datalist id="price-items-list"></datalist>
+                </div>
+                <div id="selected-price-item" style="display:none; margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <div style="font-weight: 600; margin-bottom: 10px;" id="selected-item-name"></div>
+                    <div style="font-size: 13px; color: #666;" id="selected-item-details"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Month</label>
+                        <select id="price-month"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>New Price ($)</label>
+                        <input type="number" id="new-price" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" style="flex:1">Save Price</button>
+                    <button type="button" class="btn" style="background:#eee" onclick="closeUpdatePriceModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Price History Modal -->
+    <div class="modal" id="price-history-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="history-item-name">Price History</h2>
+                <button class="close-btn" onclick="closePriceHistoryModal()">&times;</button>
+            </div>
+            <div id="history-item-details" style="margin-bottom: 15px; color: #666;"></div>
+            <div style="display: flex; gap: 20px; margin-bottom: 15px;">
+                <div>
+                    <div style="font-size: 12px; color: #888;">Current Price</div>
+                    <div style="font-size: 24px; font-weight: bold;" id="history-current-price">-</div>
+                </div>
+                <div>
+                    <div style="font-size: 12px; color: #888;">Per Unit Cost</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #27ae60;" id="history-unit-cost">-</div>
+                </div>
+            </div>
+            <div class="price-history-list" id="price-history-list"></div>
+            <div class="form-actions">
+                <button class="btn btn-primary" onclick="editPriceFromHistory()">Update Price</button>
+                <button class="btn" style="background:#eee" onclick="closePriceHistoryModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="nav-indicator" id="nav-indicator"></div>
+
+    <script>
+        // ==================== API FUNCTIONS ====================
+        const API = '/api';
+
+        async function api(endpoint, options = {}) {
+            const res = await fetch(API + endpoint, {
+                headers: { 'Content-Type': 'application/json' },
+                ...options
+            });
+            if (!res.ok) throw new Error(`API error: ${res.status}`);
+            return res.json();
+        }
+
+        // ==================== DATA CACHE ====================
+        let inventoryCache = [];
+        let priceCache = [];
+        let selectedMonth = getCurrentMonth();
+        let availableMonths = [];
+
+        function getCurrentMonth() {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        function formatMonthDisplay(month) {
+            const [year, m] = month.split('-');
+            const date = new Date(year, parseInt(m) - 1);
+            return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        }
+
+        async function loadInventoryMonths() {
+            availableMonths = await api('/inventory/months');
+            populateMonthSelector();
+        }
+
+        function populateMonthSelector() {
+            const selector = document.getElementById('month-selector');
+            const current = getCurrentMonth();
+
+            // Get unique months: available + current (always shown)
+            const months = new Set([current, ...availableMonths]);
+
+            // Add previous 3 months as options even if no data
+            for (let i = 1; i <= 3; i++) {
+                const d = new Date();
+                d.setMonth(d.getMonth() - i);
+                months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+            }
+
+            const sorted = [...months].sort().reverse();
+            selector.innerHTML = sorted.map(m =>
+                `<option value="${m}" ${m === selectedMonth ? 'selected' : ''}>${formatMonthDisplay(m)}${availableMonths.includes(m) ? '' : ' (new)'}</option>`
+            ).join('');
+        }
+
+        async function loadInventory() {
+            inventoryCache = await api(`/inventory?month=${selectedMonth}`);
+            return inventoryCache;
+        }
+
+        async function loadPrices() {
+            priceCache = await api('/prices');
+            return priceCache;
+        }
+
+        // ==================== STATE ====================
+        let currentFilter = '';
+        let currentSupplier = '';
+        let currentLocation = '';
+        let selectedPriceItem = null;
+
+        // ==================== TAB SWITCHING ====================
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+            document.getElementById(`${tab}-tab`).classList.add('active');
+
+            if (tab === 'inventory') {
+                document.getElementById('search').focus();
+                renderTable();
+            } else {
+                document.getElementById('price-search').focus();
+                renderPriceTable();
+            }
+        }
+
+        // ==================== INVENTORY FUNCTIONS ====================
+        function getSuppliers() {
+            return [...new Set(inventoryCache.map(i => i.supplier).filter(s => s))].sort();
+        }
+
+        function populateSuppliers() {
+            const suppliers = getSuppliers();
+            const filter = document.getElementById('supplier-filter');
+            const datalist = document.getElementById('suppliers-list');
+            filter.innerHTML = '<option value="">All Suppliers</option>';
+            datalist.innerHTML = '';
+            suppliers.forEach(s => {
+                filter.innerHTML += `<option value="${s}">${s}</option>`;
+                datalist.innerHTML += `<option value="${s}">`;
+            });
+        }
+
+        function calcTotal(item) {
+            return (item.count1 || 0) + (item.count2 || 0) + (item.count3 || 0) + (item.count4 || 0);
+        }
+
+        function calcExtended(item) {
+            return calcTotal(item) * (item.cost || 0);
+        }
+
+        function formatCurrency(n) {
+            return '$' + (n || 0).toFixed(2);
+        }
+
+        function getFilteredItems() {
+            const search = document.getElementById('search').value.toLowerCase().trim();
+            return inventoryCache.filter(item => {
+                const matchSearch = !search || item.item.toLowerCase().includes(search) || (item.supplier || '').toLowerCase().includes(search);
+                const matchSupplier = !currentSupplier || item.supplier === currentSupplier;
+                let matchCount = true;
+                if (currentFilter === 'counted') matchCount = calcTotal(item) > 0;
+                if (currentFilter === 'uncounted') matchCount = calcTotal(item) === 0;
+                return matchSearch && matchSupplier && matchCount;
+            });
+        }
+
+        function renderTable() {
+            const filtered = getFilteredItems();
+            const tbody = document.getElementById('inventory-table');
+            tbody.innerHTML = '';
+            let grandTotal = 0;
+            const countedCount = inventoryCache.filter(i => calcTotal(i) > 0).length;
+
+            filtered.forEach((item, idx) => {
+                const total = calcTotal(item);
+                const extended = calcExtended(item);
+                grandTotal += extended;
+                const tr = document.createElement('tr');
+                tr.dataset.idx = idx;
+                tr.dataset.id = item.id;
+                const hasValue = (v) => v ? 'has-value' : '';
+                tr.innerHTML = `
+                    <td>
+                        <div class="item-name">${escapeHtml(item.item)}</div>
+                        <div class="item-details">${escapeHtml(item.supplier || '')} ${item.supplier && item.unit ? '·' : ''} ${escapeHtml(item.unit || '')}</div>
+                    </td>
+                    <td>${formatCurrency(item.cost)}</td>
+                    <td><input type="number" class="count-input ${hasValue(item.count1)}" value="${item.count1 || ''}" min="0" step="0.5" data-id="${item.id}" data-field="count1" data-row="${idx}" data-col="0" placeholder="0"></td>
+                    <td><input type="number" class="count-input ${hasValue(item.count2)}" value="${item.count2 || ''}" min="0" step="0.5" data-id="${item.id}" data-field="count2" data-row="${idx}" data-col="1" placeholder="0"></td>
+                    <td><input type="number" class="count-input ${hasValue(item.count3)}" value="${item.count3 || ''}" min="0" step="0.5" data-id="${item.id}" data-field="count3" data-row="${idx}" data-col="2" placeholder="0"></td>
+                    <td><input type="number" class="count-input ${hasValue(item.count4)}" value="${item.count4 || ''}" min="0" step="0.5" data-id="${item.id}" data-field="count4" data-row="${idx}" data-col="3" placeholder="0"></td>
+                    <td class="total-cell">${total || '-'}</td>
+                    <td class="extended-cell">${extended > 0 ? formatCurrency(extended) : '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('items-counted').textContent = countedCount;
+            document.getElementById('grand-total').textContent = formatCurrency(inventoryCache.reduce((s, i) => s + calcExtended(i), 0));
+            document.getElementById('footer-total').textContent = formatCurrency(grandTotal);
+            document.getElementById('showing-count').textContent = `${filtered.length} items`;
+            attachInputHandlers();
+        }
+
+        function attachInputHandlers() {
+            document.querySelectorAll('.count-input').forEach(input => {
+                input.addEventListener('change', handleCountChange);
+                input.addEventListener('keydown', handleInputKeydown);
+                input.addEventListener('focus', handleInputFocus);
+            });
+        }
+
+        async function handleCountChange(e) {
+            const input = e.target;
+            const id = input.dataset.id;
+            const field = input.dataset.field;
+            const value = parseFloat(input.value) || 0;
+
+            // Update cache immediately for responsiveness
+            const item = inventoryCache.find(i => i.id === id);
+            if (item) {
+                item[field] = value;
+            }
+
+            input.classList.toggle('has-value', value > 0);
+            const row = input.closest('tr');
+            row.classList.add('just-entered');
+            setTimeout(() => row.classList.remove('just-entered'), 300);
+            updateRowTotals(row, id);
+            updateGrandTotals();
+
+            // Save to server with current month
+            try {
+                await api(`/inventory/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ ...item, month: selectedMonth })
+                });
+                // Refresh month list if this is first entry for this month
+                if (!availableMonths.includes(selectedMonth)) {
+                    await loadInventoryMonths();
+                }
+            } catch (err) {
+                console.error('Failed to save:', err);
+                showNavHint('Save failed!');
+            }
+        }
+
+        async function changeMonth(month) {
+            selectedMonth = month;
+            await loadInventory();
+            renderTable();
+            showNavHint(`Loaded ${formatMonthDisplay(month)}`);
+        }
+
+        function updateRowTotals(row, id) {
+            const item = inventoryCache.find(i => i.id === id);
+            if (!item) return;
+            const inputs = row.querySelectorAll('.count-input');
+            item.count1 = parseFloat(inputs[0].value) || 0;
+            item.count2 = parseFloat(inputs[1].value) || 0;
+            item.count3 = parseFloat(inputs[2].value) || 0;
+            item.count4 = parseFloat(inputs[3].value) || 0;
+            const total = calcTotal(item);
+            const extended = calcExtended(item);
+            row.querySelector('.total-cell').textContent = total || '-';
+            row.querySelector('.extended-cell').textContent = extended > 0 ? formatCurrency(extended) : '-';
+        }
+
+        function updateGrandTotals() {
+            const countedCount = inventoryCache.filter(i => calcTotal(i) > 0).length;
+            const grandTotal = inventoryCache.reduce((s, i) => s + calcExtended(i), 0);
+            document.getElementById('items-counted').textContent = countedCount;
+            document.getElementById('grand-total').textContent = formatCurrency(grandTotal);
+            const filtered = getFilteredItems();
+            const filteredTotal = filtered.reduce((s, i) => s + calcExtended(i), 0);
+            document.getElementById('footer-total').textContent = formatCurrency(filteredTotal);
+        }
+
+        function handleInputKeydown(e) {
+            const input = e.target;
+            const row = parseInt(input.dataset.row);
+            const col = parseInt(input.dataset.col);
+            const rowCount = document.querySelectorAll('#inventory-table tr').length;
+
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const nextRow = row + 1;
+                if (nextRow < rowCount) {
+                    const nextInput = document.querySelector(`.count-input[data-row="${nextRow}"][data-col="${col}"]`);
+                    if (nextInput) { nextInput.focus(); nextInput.select(); scrollToInput(nextInput); }
+                }
+                showNavHint('↓ Next row');
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const nextInput = document.querySelector(`.count-input[data-row="${row + 1}"][data-col="${col}"]`);
+                if (nextInput) { nextInput.focus(); nextInput.select(); scrollToInput(nextInput); }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prevInput = document.querySelector(`.count-input[data-row="${row - 1}"][data-col="${col}"]`);
+                if (prevInput) { prevInput.focus(); prevInput.select(); scrollToInput(prevInput); }
+            } else if (e.key === 'Escape') {
+                document.getElementById('search').focus();
+                document.getElementById('search').select();
+                showNavHint('Back to search');
+            }
+        }
+
+        function handleInputFocus(e) {
+            e.target.select();
+            document.querySelectorAll('tr.highlighted').forEach(tr => tr.classList.remove('highlighted'));
+            e.target.closest('tr').classList.add('highlighted');
+        }
+
+        function scrollToInput(input) {
+            const container = document.getElementById('table-scroll');
+            const row = input.closest('tr');
+            const rowTop = row.offsetTop;
+            const rowHeight = row.offsetHeight;
+            const containerHeight = container.clientHeight;
+            const scrollTop = container.scrollTop;
+            if (rowTop < scrollTop + 50) container.scrollTop = rowTop - 50;
+            else if (rowTop + rowHeight > scrollTop + containerHeight - 50) container.scrollTop = rowTop + rowHeight - containerHeight + 50;
+        }
+
+        function showNavHint(text) {
+            const hint = document.getElementById('nav-indicator');
+            hint.textContent = text;
+            hint.classList.add('visible');
+            setTimeout(() => hint.classList.remove('visible'), 1000);
+        }
+
+        async function clearAllCounts() {
+            if (!confirm(`Clear all inventory counts for ${formatMonthDisplay(selectedMonth)}?`)) return;
+            try {
+                await api('/inventory/clear-counts', {
+                    method: 'POST',
+                    body: JSON.stringify({ month: selectedMonth })
+                });
+                await loadInventory();
+                renderTable();
+                showNavHint('Counts cleared!');
+            } catch (err) {
+                alert('Failed to clear counts');
+            }
+        }
+
+        function exportCSV() {
+            window.location.href = `/api/export/inventory?month=${selectedMonth}`;
+        }
+
+        // ==================== PRICE DATABASE FUNCTIONS ====================
+        function getLocations() {
+            return [...new Set(priceCache.map(i => i.location).filter(l => l))].sort();
+        }
+
+        function populateLocations() {
+            const locations = getLocations();
+            const filter = document.getElementById('location-filter');
+            filter.innerHTML = '<option value="">All Locations</option>';
+            locations.forEach(l => {
+                filter.innerHTML += `<option value="${l}">${l}</option>`;
+            });
+        }
+
+        function getCurrentMonth() {
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const now = new Date();
+            return `${months[now.getMonth()]}'${String(now.getFullYear()).slice(2)}`;
+        }
+
+        function getFilteredPriceItems() {
+            const search = document.getElementById('price-search').value.toLowerCase().trim();
+            return priceCache.filter(item => {
+                const matchSearch = !search || item.item.toLowerCase().includes(search) || (item.supplier && item.supplier.toLowerCase().includes(search));
+                const matchLocation = !currentLocation || item.location === currentLocation;
+                return matchSearch && matchLocation;
+            });
+        }
+
+        function renderPriceTable() {
+            const filtered = getFilteredPriceItems();
+            const tbody = document.getElementById('price-table');
+            tbody.innerHTML = '';
+
+            document.getElementById('current-month').textContent = getCurrentMonth();
+            document.getElementById('price-item-count').textContent = priceCache.length;
+
+            filtered.forEach((item, idx) => {
+                const history = Object.entries(item.priceHistory || {}).slice(0, 6);
+                const prices = history.map(([_, p]) => p);
+                const prevPrice = prices[1] || prices[0];
+                const change = item.current_price && prevPrice ? ((item.current_price - prevPrice) / prevPrice * 100) : 0;
+
+                const tr = document.createElement('tr');
+                tr.style.cursor = 'pointer';
+                tr.onclick = () => showPriceHistory(item.id);
+                tr.innerHTML = `
+                    <td>
+                        <div class="item-name">${escapeHtml(item.item)}</div>
+                        <div class="item-details">${escapeHtml(item.location || '')} ${item.supplier ? '· ' + escapeHtml(item.supplier) : ''}</div>
+                    </td>
+                    <td>${escapeHtml(item.purchase_unit || '')}</td>
+                    <td>${item.units_per_inv || 1}</td>
+                    <td class="price-cell">${formatCurrency(item.current_price)}</td>
+                    <td><span class="unit-cost">${formatCurrency(item.per_unit_cost)}</span></td>
+                    <td>${renderMiniChart(prices)}</td>
+                    <td>
+                        ${change !== 0 ? `<span class="price-change ${change > 0 ? 'price-up' : 'price-down'}">${change > 0 ? '▲' : '▼'} ${Math.abs(change).toFixed(1)}%</span>` : '<span class="price-change price-same">-</span>'}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('price-showing-count').textContent = `${filtered.length} items`;
+        }
+
+        function renderMiniChart(prices) {
+            if (!prices.length) return '-';
+            const max = Math.max(...prices);
+            const min = Math.min(...prices);
+            const range = max - min || 1;
+            return `<div class="mini-chart">${prices.reverse().map(p => {
+                const height = ((p - min) / range * 25) + 5;
+                return `<div class="chart-bar" style="height:${height}px" title="${formatCurrency(p)}"></div>`;
+            }).join('')}</div>`;
+        }
+
+        // ==================== PRICE MODALS ====================
+        function openUpdatePriceModal() {
+            document.getElementById('update-price-modal').classList.add('active');
+            populatePriceItemsList();
+            populateMonthSelect();
+            document.getElementById('price-item-search').value = '';
+            document.getElementById('new-price').value = '';
+            document.getElementById('selected-price-item').style.display = 'none';
+            selectedPriceItem = null;
+            document.getElementById('price-item-search').focus();
+        }
+
+        function closeUpdatePriceModal() {
+            document.getElementById('update-price-modal').classList.remove('active');
+        }
+
+        function populatePriceItemsList() {
+            const datalist = document.getElementById('price-items-list');
+            datalist.innerHTML = priceCache.map(i => `<option value="${escapeHtml(i.item)}">`).join('');
+        }
+
+        function populateMonthSelect() {
+            const select = document.getElementById('price-month');
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const now = new Date();
+            select.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const label = `${months[d.getMonth()]}'${String(d.getFullYear()).slice(2)}`;
+                select.innerHTML += `<option value="${label}" ${i === 0 ? 'selected' : ''}>${label}</option>`;
+            }
+        }
+
+        document.getElementById('price-item-search').addEventListener('input', (e) => {
+            const search = e.target.value.toLowerCase();
+            const match = priceCache.find(i => i.item.toLowerCase() === search);
+            if (match) {
+                selectedPriceItem = match;
+                document.getElementById('selected-item-name').textContent = match.item;
+                document.getElementById('selected-item-details').textContent = `${match.purchase_unit} · Current: ${formatCurrency(match.current_price)} · Per Unit: ${formatCurrency(match.per_unit_cost)}`;
+                document.getElementById('selected-price-item').style.display = 'block';
+                document.getElementById('new-price').value = match.current_price;
+                document.getElementById('new-price').focus();
+            } else {
+                document.getElementById('selected-price-item').style.display = 'none';
+                selectedPriceItem = null;
+            }
+        });
+
+        async function saveNewPrice(e) {
+            e.preventDefault();
+            if (!selectedPriceItem) {
+                alert('Please select an item first');
+                return;
+            }
+
+            const month = document.getElementById('price-month').value;
+            const newPrice = parseFloat(document.getElementById('new-price').value);
+            if (isNaN(newPrice) || newPrice < 0) {
+                alert('Please enter a valid price');
+                return;
+            }
+
+            try {
+                await api(`/prices/${selectedPriceItem.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ month, price: newPrice })
+                });
+                await loadPrices();
+                closeUpdatePriceModal();
+                renderPriceTable();
+                showNavHint('Price updated!');
+            } catch (err) {
+                alert('Failed to update price');
+            }
+        }
+
+        function showPriceHistory(id) {
+            const item = priceCache.find(i => i.id === id);
+            if (!item) return;
+
+            selectedPriceItem = item;
+            document.getElementById('history-item-name').textContent = item.item;
+            document.getElementById('history-item-details').textContent = `${item.location || ''} ${item.supplier ? '· ' + item.supplier : ''} · ${item.purchase_unit}`;
+            document.getElementById('history-current-price').textContent = formatCurrency(item.current_price);
+            document.getElementById('history-unit-cost').textContent = formatCurrency(item.per_unit_cost);
+
+            const historyList = document.getElementById('price-history-list');
+            const entries = Object.entries(item.priceHistory || {});
+            historyList.innerHTML = entries.map(([month, price]) => `
+                <div class="price-history-item">
+                    <span>${month}</span>
+                    <span style="font-weight: 500;">${formatCurrency(price)}</span>
+                </div>
+            `).join('') || '<div class="price-history-item">No price history</div>';
+
+            document.getElementById('price-history-modal').classList.add('active');
+        }
+
+        function closePriceHistoryModal() {
+            document.getElementById('price-history-modal').classList.remove('active');
+        }
+
+        function editPriceFromHistory() {
+            closePriceHistoryModal();
+            openUpdatePriceModal();
+            if (selectedPriceItem) {
+                document.getElementById('price-item-search').value = selectedPriceItem.item;
+                document.getElementById('price-item-search').dispatchEvent(new Event('input'));
+            }
+        }
+
+        async function syncPricesToInventory() {
+            try {
+                const result = await api('/prices/sync', { method: 'POST' });
+                await loadInventory();
+                renderTable();
+                alert(`Updated ${result.updated} inventory item costs from price database.`);
+            } catch (err) {
+                alert('Failed to sync prices');
+            }
+        }
+
+        // ==================== ADD ITEM MODAL ====================
+        function openAddModal() {
+            document.getElementById('add-modal').classList.add('active');
+            document.getElementById('new-item').focus();
+        }
+
+        function closeAddModal() {
+            document.getElementById('add-modal').classList.remove('active');
+            document.getElementById('add-form').reset();
+        }
+
+        async function addNewItem(e) {
+            e.preventDefault();
+            const newItem = {
+                supplier: document.getElementById('new-supplier').value.trim(),
+                item: document.getElementById('new-item').value.trim(),
+                unit: document.getElementById('new-unit').value.trim(),
+                cost: parseFloat(document.getElementById('new-cost').value) || 0
+            };
+
+            try {
+                await api('/inventory', {
+                    method: 'POST',
+                    body: JSON.stringify(newItem)
+                });
+                await loadInventory();
+                closeAddModal();
+                populateSuppliers();
+                document.getElementById('search').value = newItem.item;
+                renderTable();
+                setTimeout(() => {
+                    const input = document.querySelector('.count-input');
+                    if (input) input.focus();
+                }, 100);
+            } catch (err) {
+                alert('Failed to add item');
+            }
+        }
+
+        // ==================== UTILITY ====================
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s || '';
+            return div.innerHTML;
+        }
+
+        // ==================== EVENT LISTENERS ====================
+        document.getElementById('search').addEventListener('input', renderTable);
+        document.getElementById('search').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                const firstInput = document.querySelector('.count-input');
+                if (firstInput) { firstInput.focus(); firstInput.select(); showNavHint('Jumped to first item'); }
+            }
+        });
+
+        document.querySelectorAll('.filter-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+                currentFilter = chip.dataset.filter;
+                renderTable();
+                document.getElementById('search').focus();
+            });
+        });
+
+        document.getElementById('supplier-filter').addEventListener('change', (e) => {
+            currentSupplier = e.target.value;
+            renderTable();
+        });
+
+        document.getElementById('price-search').addEventListener('input', renderPriceTable);
+        document.getElementById('location-filter').addEventListener('change', (e) => {
+            currentLocation = e.target.value;
+            renderPriceTable();
+        });
+
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.classList.remove('active');
+            });
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                const activeTab = document.querySelector('.tab-content.active').id;
+                const searchBox = activeTab === 'inventory-tab' ? 'search' : 'price-search';
+                document.getElementById(searchBox).focus();
+                document.getElementById(searchBox).select();
+            }
+        });
+
+        // ==================== INITIALIZE ====================
+        async function init() {
+            try {
+                await loadInventoryMonths();
+                await Promise.all([loadInventory(), loadPrices()]);
+                populateSuppliers();
+                populateLocations();
+                renderTable();
+                document.getElementById('search').focus();
+            } catch (err) {
+                console.error('Failed to load data:', err);
+                document.getElementById('inventory-table').innerHTML = '<tr><td colspan="8" class="loading" style="color: #e74c3c;">Failed to connect to server. Make sure server.py is running.</td></tr>';
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
