@@ -39,9 +39,7 @@ def get_inventory_item(item_id):
     """Get a single inventory item."""
     month = request.args.get('month')
     item = db.get_inventory_item(item_id, month)
-    if item:
-        return jsonify(item)
-    return jsonify({'error': 'Item not found'}), 404
+    return jsonify(item) if item else (jsonify({'error': 'Item not found'}), 404)
 
 @app.route('/api/inventory/<item_id>', methods=['PUT'])
 def update_inventory_item(item_id):
@@ -49,9 +47,7 @@ def update_inventory_item(item_id):
     data = request.get_json()
     month = data.get('month')
     item = db.update_inventory_item(item_id, data, month)
-    if item:
-        return jsonify(item)
-    return jsonify({'error': 'Item not found'}), 404
+    return jsonify(item) if item else (jsonify({'error': 'Item not found'}), 404)
 
 @app.route('/api/inventory', methods=['POST'])
 def add_inventory_item():
@@ -89,9 +85,16 @@ def get_prices():
 def get_price_item(item_id):
     """Get a single price item with history."""
     item = db.get_price_item(item_id)
-    if item:
-        return jsonify(item)
-    return jsonify({'error': 'Item not found'}), 404
+    return jsonify(item) if item else (jsonify({'error': 'Item not found'}), 404)
+
+@app.route('/api/prices', methods=['POST'])
+def add_price_item():
+    """Add a new price item."""
+    data = request.get_json()
+    if not data.get('item'):
+        return jsonify({'error': 'Item name is required'}), 400
+    item = db.add_price_item(data)
+    return jsonify(item), 201
 
 @app.route('/api/prices/<item_id>', methods=['PUT'])
 def update_price(item_id):
@@ -104,9 +107,7 @@ def update_price(item_id):
         return jsonify({'error': 'Month and price are required'}), 400
 
     item = db.update_price(item_id, month, float(price))
-    if item:
-        return jsonify(item)
-    return jsonify({'error': 'Item not found'}), 404
+    return jsonify(item) if item else (jsonify({'error': 'Item not found'}), 404)
 
 @app.route('/api/prices/sync', methods=['POST'])
 def sync_prices():
@@ -118,36 +119,56 @@ def sync_prices():
 
 @app.route('/api/export/inventory', methods=['GET'])
 def export_inventory():
-    """Export inventory as CSV for specified month."""
+    """Export inventory as CSV for specified month with supplier subtotals."""
+    from collections import defaultdict
+
     month = request.args.get('month')
     items = db.get_all_inventory(month)
 
     # Filter to only items with counts
-    items = [i for i in items if (i['count1'] or i['count2'] or i['count3'] or i['count4'])]
+    items = [i for i in items if any([i['count1'], i['count2'], i['count3'], i['count4']])]
 
     if not items:
         return jsonify({'error': 'No items with counts'}), 400
 
-    lines = ['Supplier,Item,Unit,Cost,Count1,Count2,Count3,Count4,Total,Extended']
+    # Group items by supplier
+    by_supplier = defaultdict(list)
     for i in items:
-        total = (i['count1'] or 0) + (i['count2'] or 0) + (i['count3'] or 0) + (i['count4'] or 0)
-        extended = total * (i['cost'] or 0)
-        lines.append(','.join([
-            escape_csv(i['supplier']),
-            escape_csv(i['item']),
-            escape_csv(i['unit']),
-            f"{i['cost']:.2f}",
-            str(i['count1'] or 0),
-            str(i['count2'] or 0),
-            str(i['count3'] or 0),
-            str(i['count4'] or 0),
-            str(total),
-            f"{extended:.2f}"
-        ]))
+        by_supplier[i['supplier'] or 'No Supplier'].append(i)
 
-    csv_content = '\n'.join(lines)
+    lines = ['Supplier,Item,Unit,Cost,Count1,Count2,Count3,Count4,Total,Extended']
+    grand_total = 0
+
+    for supplier in sorted(by_supplier.keys()):
+        supplier_items = by_supplier[supplier]
+        supplier_total = 0
+
+        for i in supplier_items:
+            total = sum([i['count1'] or 0, i['count2'] or 0, i['count3'] or 0, i['count4'] or 0])
+            extended = total * (i['cost'] or 0)
+            supplier_total += extended
+
+            lines.append(','.join([
+                escape_csv(i['supplier']),
+                escape_csv(i['item']),
+                escape_csv(i['unit']),
+                f"{i['cost']:.2f}",
+                str(i['count1'] or 0),
+                str(i['count2'] or 0),
+                str(i['count3'] or 0),
+                str(i['count4'] or 0),
+                str(total),
+                f"{extended:.2f}"
+            ]))
+
+        lines.append(f'{escape_csv(supplier)} TOTAL,,,,,,,,,{supplier_total:.2f}')
+        lines.append('')
+        grand_total += supplier_total
+
+    lines.append(f'GRAND TOTAL,,,,,,,,,{grand_total:.2f}')
+
     filename = f'inventory-{month}.csv' if month else 'inventory.csv'
-    return csv_content, 200, {
+    return '\n'.join(lines), 200, {
         'Content-Type': 'text/csv',
         'Content-Disposition': f'attachment; filename={filename}'
     }
@@ -178,9 +199,8 @@ def export_prices():
 def escape_csv(s):
     """Escape a string for CSV."""
     s = str(s) if s else ''
-    if ',' in s or '"' in s or '\n' in s:
-        return '"' + s.replace('"', '""') + '"'
-    return s
+    needs_escape = any(c in s for c in ',"\n')
+    return f'"{s.replace(chr(34), chr(34)*2)}"' if needs_escape else s
 
 # ==================== MAIN ====================
 

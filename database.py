@@ -94,27 +94,19 @@ def get_all_inventory(month=None):
     conn = get_db()
     cursor = conn.cursor()
 
-    if month:
-        # Get items with counts for specific month
-        cursor.execute('''
-            SELECT i.id, i.supplier, i.item, i.unit, i.cost, i.is_custom,
-                   i.created_at, i.updated_at,
-                   COALESCE(c.count1, 0) as count1,
-                   COALESCE(c.count2, 0) as count2,
-                   COALESCE(c.count3, 0) as count3,
-                   COALESCE(c.count4, 0) as count4
-            FROM inventory_items i
-            LEFT JOIN inventory_counts c ON i.id = c.inventory_item_id AND c.month = ?
-            ORDER BY i.item
-        ''', (month,))
-    else:
-        # Get items without counts (for backwards compatibility)
-        cursor.execute('''
-            SELECT id, supplier, item, unit, cost, is_custom, created_at, updated_at,
-                   0 as count1, 0 as count2, 0 as count3, 0 as count4
-            FROM inventory_items ORDER BY item
-        ''')
+    query = '''
+        SELECT i.id, i.supplier, i.item, i.unit, i.cost, i.is_custom,
+               i.created_at, i.updated_at,
+               COALESCE(c.count1, 0) as count1,
+               COALESCE(c.count2, 0) as count2,
+               COALESCE(c.count3, 0) as count3,
+               COALESCE(c.count4, 0) as count4
+        FROM inventory_items i
+        LEFT JOIN inventory_counts c ON i.id = c.inventory_item_id {}
+        ORDER BY i.item
+    '''.format('AND c.month = ?' if month else '')
 
+    cursor.execute(query, (month,) if month else ())
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -125,7 +117,7 @@ def get_inventory_item(item_id, month=None):
     cursor = conn.cursor()
 
     if month:
-        cursor.execute('''
+        query = '''
             SELECT i.id, i.supplier, i.item, i.unit, i.cost, i.is_custom,
                    i.created_at, i.updated_at,
                    COALESCE(c.count1, 0) as count1,
@@ -135,7 +127,8 @@ def get_inventory_item(item_id, month=None):
             FROM inventory_items i
             LEFT JOIN inventory_counts c ON i.id = c.inventory_item_id AND c.month = ?
             WHERE i.id = ?
-        ''', (month, item_id))
+        '''
+        cursor.execute(query, (month, item_id))
     else:
         cursor.execute('SELECT * FROM inventory_items WHERE id = ?', (item_id,))
 
@@ -302,8 +295,7 @@ def update_price(item_id, month, price):
         conn.close()
         return None
 
-    units_per_inv = row['units_per_inv'] or 1
-    per_unit_cost = round(price / units_per_inv, 2)
+    per_unit_cost = round(price / (row['units_per_inv'] or 1), 2)
 
     # Update price item
     cursor.execute('''
@@ -312,21 +304,56 @@ def update_price(item_id, month, price):
         WHERE id = ?
     ''', (price, per_unit_cost, now, item_id))
 
-    # Check if this month already exists in history
-    cursor.execute('''
-        SELECT id FROM price_history WHERE price_item_id = ? AND month = ?
-    ''', (item_id, month))
+    # Update or insert price history
+    cursor.execute('SELECT id FROM price_history WHERE price_item_id = ? AND month = ?', (item_id, month))
     existing = cursor.fetchone()
 
     if existing:
-        cursor.execute('''
-            UPDATE price_history SET price = ? WHERE id = ?
-        ''', (price, existing['id']))
+        cursor.execute('UPDATE price_history SET price = ? WHERE id = ?', (price, existing['id']))
     else:
-        cursor.execute('''
-            INSERT INTO price_history (price_item_id, month, price)
-            VALUES (?, ?, ?)
-        ''', (item_id, month, price))
+        cursor.execute('INSERT INTO price_history (price_item_id, month, price) VALUES (?, ?, ?)', (item_id, month, price))
+
+    conn.commit()
+    conn.close()
+    return get_price_item(item_id)
+
+def add_price_item(data):
+    """Add a new price item."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+    item_id = f"price-{int(datetime.now().timestamp() * 1000)}"
+
+    units_per_inv = data.get('units_per_inv', 1) or 1
+    current_price = data.get('current_price', 0) or 0
+    per_unit_cost = round(current_price / units_per_inv, 2)
+
+    cursor.execute('''
+        INSERT INTO price_items
+        (id, location, supplier, item, purchase_unit, units_per_inv, current_price, per_unit_cost, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        item_id,
+        data.get('location', ''),
+        data.get('supplier', ''),
+        data.get('item', ''),
+        data.get('purchase_unit', ''),
+        units_per_inv,
+        current_price,
+        per_unit_cost,
+        now,
+        now
+    ))
+
+    # Add initial price to history if price provided
+    if current_price > 0:
+        month = data.get('month')
+        if month:
+            cursor.execute('''
+                INSERT INTO price_history (price_item_id, month, price)
+                VALUES (?, ?, ?)
+            ''', (item_id, month, current_price))
 
     conn.commit()
     conn.close()
@@ -340,22 +367,20 @@ def sync_prices_to_inventory():
     now = datetime.now().isoformat()
     updated = 0
 
-    # Get all price items
     cursor.execute('SELECT item, per_unit_cost FROM price_items')
     price_items = cursor.fetchall()
 
     for price_item in price_items:
-        # Try to find matching inventory item (case-insensitive partial match)
+        item_lower = price_item['item'].lower()
         cursor.execute('''
             SELECT id, cost FROM inventory_items
             WHERE LOWER(item) LIKE ? OR ? LIKE '%' || LOWER(item) || '%'
-        ''', (f'%{price_item["item"].lower()}%', price_item['item'].lower()))
+        ''', (f'%{item_lower}%', item_lower))
 
         for inv_item in cursor.fetchall():
             if abs(inv_item['cost'] - price_item['per_unit_cost']) > 0.001:
-                cursor.execute('''
-                    UPDATE inventory_items SET cost = ?, updated_at = ? WHERE id = ?
-                ''', (price_item['per_unit_cost'], now, inv_item['id']))
+                cursor.execute('UPDATE inventory_items SET cost = ?, updated_at = ? WHERE id = ?',
+                             (price_item['per_unit_cost'], now, inv_item['id']))
                 updated += 1
 
     conn.commit()

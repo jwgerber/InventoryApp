@@ -407,6 +407,7 @@
                     <select id="location-filter" style="padding: 6px 10px; border-radius: 20px; border: 1px solid #ddd; font-size: 12px;">
                         <option value="">All Locations</option>
                     </select>
+                    <button class="btn btn-primary" onclick="openAddPriceModal()">+ Add Price Item</button>
                     <button class="btn btn-primary" onclick="openUpdatePriceModal()">Update Prices</button>
                     <button class="btn btn-success" onclick="syncPricesToInventory()">Sync to Inventory</button>
                 </div>
@@ -536,6 +537,63 @@
         </div>
     </div>
 
+    <!-- Add Price Item Modal -->
+    <div class="modal" id="add-price-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Price Item</h2>
+                <button class="close-btn" onclick="closeAddPriceModal()">&times;</button>
+            </div>
+            <form id="add-price-form" onsubmit="addNewPriceItem(event)">
+                <div class="form-group">
+                    <label>Item Name *</label>
+                    <input type="text" id="new-price-item" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Location</label>
+                        <input type="text" id="new-price-location" list="locations-list">
+                        <datalist id="locations-list"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label>Supplier</label>
+                        <input type="text" id="new-price-supplier">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Purchase Unit *</label>
+                        <input type="text" id="new-price-purchase-unit" required placeholder="case, bag, lb...">
+                    </div>
+                    <div class="form-group">
+                        <label>Units per Inventory *</label>
+                        <input type="number" id="new-price-units-per-inv" step="0.01" min="0.01" value="1" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Current Price ($)</label>
+                        <input type="number" id="new-price-current" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Price Month</label>
+                        <select id="new-price-month"></select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="create-inventory-item" checked>
+                        Also create linked inventory item
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" style="flex:1">Add Price Item</button>
+                    <button type="button" class="btn" style="background:#eee" onclick="closeAddPriceModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="nav-indicator" id="nav-indicator"></div>
 
     <script>
@@ -564,7 +622,7 @@
 
         function formatMonthDisplay(month) {
             const [year, m] = month.split('-');
-            const date = new Date(year, parseInt(m) - 1);
+            const date = new Date(parseInt(year), parseInt(m) - 1);
             return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         }
 
@@ -643,7 +701,7 @@
         }
 
         function calcTotal(item) {
-            return (item.count1 || 0) + (item.count2 || 0) + (item.count3 || 0) + (item.count4 || 0);
+            return [item.count1, item.count2, item.count3, item.count4].reduce((sum, val) => sum + (val || 0), 0);
         }
 
         function calcExtended(item) {
@@ -657,11 +715,13 @@
         function getFilteredItems() {
             const search = document.getElementById('search').value.toLowerCase().trim();
             return inventoryCache.filter(item => {
-                const matchSearch = !search || item.item.toLowerCase().includes(search) || (item.supplier || '').toLowerCase().includes(search);
+                const matchSearch = !search ||
+                    item.item.toLowerCase().includes(search) ||
+                    (item.supplier || '').toLowerCase().includes(search);
                 const matchSupplier = !currentSupplier || item.supplier === currentSupplier;
-                let matchCount = true;
-                if (currentFilter === 'counted') matchCount = calcTotal(item) > 0;
-                if (currentFilter === 'uncounted') matchCount = calcTotal(item) === 0;
+                const total = calcTotal(item);
+                const matchCount = currentFilter === 'counted' ? total > 0 :
+                                  currentFilter === 'uncounted' ? total === 0 : true;
                 return matchSearch && matchSupplier && matchCount;
             });
         }
@@ -757,11 +817,12 @@
         function updateRowTotals(row, id) {
             const item = inventoryCache.find(i => i.id === id);
             if (!item) return;
+
             const inputs = row.querySelectorAll('.count-input');
-            item.count1 = parseFloat(inputs[0].value) || 0;
-            item.count2 = parseFloat(inputs[1].value) || 0;
-            item.count3 = parseFloat(inputs[2].value) || 0;
-            item.count4 = parseFloat(inputs[3].value) || 0;
+            ['count1', 'count2', 'count3', 'count4'].forEach((field, idx) => {
+                item[field] = parseFloat(inputs[idx].value) || 0;
+            });
+
             const total = calcTotal(item);
             const extended = calcExtended(item);
             row.querySelector('.total-cell').textContent = total || '-';
@@ -784,27 +845,40 @@
             const col = parseInt(input.dataset.col);
             const rowCount = document.querySelectorAll('#inventory-table tr').length;
 
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                const nextRow = row + 1;
-                if (nextRow < rowCount) {
-                    const nextInput = document.querySelector(`.count-input[data-row="${nextRow}"][data-col="${col}"]`);
-                    if (nextInput) { nextInput.focus(); nextInput.select(); scrollToInput(nextInput); }
+            const navigateToInput = (selector, hint) => {
+                const target = document.querySelector(selector);
+                if (target) {
+                    target.focus();
+                    target.select();
+                    scrollToInput(target);
+                    if (hint) showNavHint(hint);
                 }
-                showNavHint('↓ Next row');
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                const nextInput = document.querySelector(`.count-input[data-row="${row + 1}"][data-col="${col}"]`);
-                if (nextInput) { nextInput.focus(); nextInput.select(); scrollToInput(nextInput); }
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                const prevInput = document.querySelector(`.count-input[data-row="${row - 1}"][data-col="${col}"]`);
-                if (prevInput) { prevInput.focus(); prevInput.select(); scrollToInput(prevInput); }
-            } else if (e.key === 'Escape') {
-                document.getElementById('search').focus();
-                document.getElementById('search').select();
-                showNavHint('Back to search');
-            }
+            };
+
+            const keyActions = {
+                'Enter': () => {
+                    e.preventDefault();
+                    if (row + 1 < rowCount) {
+                        navigateToInput(`.count-input[data-row="${row + 1}"][data-col="${col}"]`, '↓ Next row');
+                    }
+                },
+                'ArrowDown': () => {
+                    e.preventDefault();
+                    navigateToInput(`.count-input[data-row="${row + 1}"][data-col="${col}"]`);
+                },
+                'ArrowUp': () => {
+                    e.preventDefault();
+                    navigateToInput(`.count-input[data-row="${row - 1}"][data-col="${col}"]`);
+                },
+                'Escape': () => {
+                    const search = document.getElementById('search');
+                    search.focus();
+                    search.select();
+                    showNavHint('Back to search');
+                }
+            };
+
+            keyActions[e.key]?.();
         }
 
         function handleInputFocus(e) {
@@ -864,16 +938,18 @@
             });
         }
 
-        function getCurrentMonth() {
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        function getCurrentMonthDisplay() {
             const now = new Date();
-            return `${months[now.getMonth()]}'${String(now.getFullYear()).slice(2)}`;
+            const monthName = now.toLocaleDateString('en-US', { month: 'short' });
+            return `${monthName}'${String(now.getFullYear()).slice(2)}`;
         }
 
         function getFilteredPriceItems() {
             const search = document.getElementById('price-search').value.toLowerCase().trim();
             return priceCache.filter(item => {
-                const matchSearch = !search || item.item.toLowerCase().includes(search) || (item.supplier && item.supplier.toLowerCase().includes(search));
+                const matchSearch = !search ||
+                    item.item.toLowerCase().includes(search) ||
+                    (item.supplier && item.supplier.toLowerCase().includes(search));
                 const matchLocation = !currentLocation || item.location === currentLocation;
                 return matchSearch && matchLocation;
             });
@@ -884,7 +960,7 @@
             const tbody = document.getElementById('price-table');
             tbody.innerHTML = '';
 
-            document.getElementById('current-month').textContent = getCurrentMonth();
+            document.getElementById('current-month').textContent = getCurrentMonthDisplay();
             document.getElementById('price-item-count').textContent = priceCache.length;
 
             filtered.forEach((item, idx) => {
@@ -918,13 +994,17 @@
 
         function renderMiniChart(prices) {
             if (!prices.length) return '-';
+
             const max = Math.max(...prices);
             const min = Math.min(...prices);
             const range = max - min || 1;
-            return `<div class="mini-chart">${prices.reverse().map(p => {
+
+            const bars = prices.reverse().map(p => {
                 const height = ((p - min) / range * 25) + 5;
                 return `<div class="chart-bar" style="height:${height}px" title="${formatCurrency(p)}"></div>`;
-            }).join('')}</div>`;
+            }).join('');
+
+            return `<div class="mini-chart">${bars}</div>`;
         }
 
         // ==================== PRICE MODALS ====================
@@ -950,12 +1030,13 @@
 
         function populateMonthSelect() {
             const select = document.getElementById('price-month');
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             const now = new Date();
             select.innerHTML = '';
+
             for (let i = 0; i < 3; i++) {
                 const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-                const label = `${months[d.getMonth()]}'${String(d.getFullYear()).slice(2)}`;
+                const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+                const label = `${monthName}'${String(d.getFullYear()).slice(2)}`;
                 select.innerHTML += `<option value="${label}" ${i === 0 ? 'selected' : ''}>${label}</option>`;
             }
         }
@@ -1047,6 +1128,94 @@
                 alert(`Updated ${result.updated} inventory item costs from price database.`);
             } catch (err) {
                 alert('Failed to sync prices');
+            }
+        }
+
+        // ==================== ADD PRICE ITEM MODAL ====================
+        function openAddPriceModal() {
+            document.getElementById('add-price-modal').classList.add('active');
+            populateLocationsList();
+            populateNewPriceMonthSelect();
+            document.getElementById('new-price-item').focus();
+        }
+
+        function closeAddPriceModal() {
+            document.getElementById('add-price-modal').classList.remove('active');
+            document.getElementById('add-price-form').reset();
+            document.getElementById('create-inventory-item').checked = true;
+        }
+
+        function populateLocationsList() {
+            const locations = getLocations();
+            const datalist = document.getElementById('locations-list');
+            datalist.innerHTML = locations.map(l => `<option value="${escapeHtml(l)}">`).join('');
+        }
+
+        function populateNewPriceMonthSelect() {
+            const select = document.getElementById('new-price-month');
+            const now = new Date();
+            select.innerHTML = '';
+
+            for (let i = 0; i < 3; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+                const label = `${monthName}'${String(d.getFullYear()).slice(2)}`;
+                select.innerHTML += `<option value="${label}" ${i === 0 ? 'selected' : ''}>${label}</option>`;
+            }
+        }
+
+        async function addNewPriceItem(e) {
+            e.preventDefault();
+
+            const itemName = document.getElementById('new-price-item').value.trim();
+            const location = document.getElementById('new-price-location').value.trim();
+            const supplier = document.getElementById('new-price-supplier').value.trim();
+            const purchaseUnit = document.getElementById('new-price-purchase-unit').value.trim();
+            const unitsPerInv = parseFloat(document.getElementById('new-price-units-per-inv').value) || 1;
+            const currentPrice = parseFloat(document.getElementById('new-price-current').value) || 0;
+            const month = document.getElementById('new-price-month').value;
+            const createInventory = document.getElementById('create-inventory-item').checked;
+
+            const priceData = {
+                item: itemName,
+                location: location,
+                supplier: supplier,
+                purchase_unit: purchaseUnit,
+                units_per_inv: unitsPerInv,
+                current_price: currentPrice,
+                month: month
+            };
+
+            try {
+                // Add price item
+                await api('/prices', {
+                    method: 'POST',
+                    body: JSON.stringify(priceData)
+                });
+
+                // Optionally create linked inventory item
+                if (createInventory) {
+                    const perUnitCost = currentPrice / unitsPerInv;
+                    await api('/inventory', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            item: itemName,
+                            supplier: supplier,
+                            unit: purchaseUnit,
+                            cost: perUnitCost
+                        })
+                    });
+                    await loadInventory();
+                }
+
+                await loadPrices();
+                closeAddPriceModal();
+                populateLocations();
+                renderPriceTable();
+                showNavHint('Price item added!');
+            } catch (err) {
+                alert('Failed to add price item');
+                console.error(err);
             }
         }
 
